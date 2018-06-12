@@ -33,7 +33,7 @@ from matplotlib import pyplot as plt
 from IPython import display
 from .utilities import in_ipynb
 
-__version__ = '0.8.3'
+__version__ = '0.8.4'
 
 
 
@@ -82,7 +82,7 @@ class LayerSet(object):
     def add_layer(self, name = 'unnamed', gds_layer = 0, gds_datatype = 0,
                  description = None, color = None, inverted = False,
                   alpha = 0.6, dither = None):
-        new_layer = Layer(name = name, gds_layer = gds_layer, gds_datatype = gds_datatype,
+        new_layer = Layer(gds_layer = gds_layer, gds_datatype = gds_datatype, name = name, 
                  description = description, inverted = inverted,
                  color = color, alpha = alpha, dither = dither)
         if name in self._layers:
@@ -104,16 +104,29 @@ class LayerSet(object):
         return str(list(self._layers.values()))
 
 
+
 class Layer(object):
     layer_dict = {}
 
-    def __init__(self, name = 'unnamed', gds_layer = 0, gds_datatype = 0,
+    def __init__(self, gds_layer = 0, gds_datatype = 0, name = 'unnamed', 
                  description = None, inverted = False,
                  color = None, alpha = 0.6, dither = None):
-        self.name = name
+        if isinstance(gds_layer, Layer):
+            l = gds_layer # We were actually passed Layer(mylayer), make a copy
+            gds_datatype = l.gds_datatype
+            name = l.name
+            description = l.description
+            alpha = l.alpha
+            dither = l.dither
+            inverted = l.inverted
+            gds_layer = l.gds_layer
+
+
         self.gds_layer = gds_layer
         self.gds_datatype = gds_datatype
+        self.name = name
         self.description = description
+        self.inverted = inverted
         self.alpha = alpha
         self.dither = dither
         
@@ -164,12 +177,17 @@ def _parse_layer(layer):
     [0,1] representing layer=0 and datatype=1, or just a layer number """
     if isinstance(layer, Layer):
         gds_layer, gds_datatype = layer.gds_layer, layer.gds_datatype
-    elif np.size(layer) == 2:
+    elif np.shape(layer) == (2,): # In form [3,0]
         gds_layer, gds_datatype = layer[0], layer[1]
+    elif np.shape(layer) == (1,): # In form [3]
+        gds_layer, gds_datatype = layer[0], 0
     elif layer is None:
         gds_layer, gds_datatype = 0, 0
-    else:
+    elif isinstance(layer, (int, float)):
         gds_layer, gds_datatype = layer, 0
+    else:
+        raise ValueError("""[PHIDL] _parse_layer() was passed something
+            that could not be interpreted as a layer: layer = %s""" % layer)
     return (gds_layer, gds_datatype)
 
     
@@ -325,12 +343,19 @@ class Port(object):
 
 class Polygon(gdspy.Polygon, _GeometryHelper):
     
+    def __init__(self, points, gds_layer, gds_datatype, parent):
+        self.parent = parent
+        super(Polygon, self).__init__(points = points, layer=gds_layer, datatype=gds_datatype, verbose=False)
+
+
     @property
     def bbox(self):
         return np.asarray( (np.min(self.points, axis = 0), np.max(self.points, axis = 0)))
 
     def rotate(self, angle = 45, center = (0,0)):
         super(Polygon, self).rotate(angle = angle*pi/180, center = center)
+        if self.parent is not None:
+            self.parent._bb_valid = False
         return self
             
     def move(self, origin = (0,0), destination = None, axis = None):
@@ -359,11 +384,15 @@ class Polygon(gdspy.Polygon, _GeometryHelper):
         dx,dy = np.array(d) - o
 
         super(Polygon, self).translate(dx, dy)
+        if self.parent is not None:
+            self.parent._bb_valid = False
         return self
 
             
     def reflect(self, p1 = (0,1), p2 = (0,0)):
         self.points = _reflect_points(self.points, p1, p2)
+        if self.parent is not None:
+            self.parent._bb_valid = False
         return self
 
     
@@ -461,13 +490,13 @@ class Device(gdspy.Cell, _GeometryHelper):
         if bbox is None:  bbox = ((0,0),(0,0))
         return np.array(bbox)
     
-    # IMPROVEMENT: This is a hack to get around gdspy caching issues
-    @property
-    def _bb_valid(self):
-        return False
-    @_bb_valid.setter
-    def _bb_valid(self, value):
-        pass
+    # # IMPROVEMENT: This is a hack to get around gdspy caching issues
+    # @property
+    # def _bb_valid(self):
+    #     return False
+    # @_bb_valid.setter
+    # def _bb_valid(self, value):
+    #     pass
 
     def add_ref(self, D, alias = None):
         """ Takes a Device and adds it as a DeviceReference to the current
@@ -493,25 +522,44 @@ class Device(gdspy.Cell, _GeometryHelper):
             points[0][0][0] # Try to access first x point
             return [self.add_polygon(p, layer) for p in points]
         except: pass # Verified points is not a list of polygons, continue on
-        
+
         
         if isinstance(points, gdspy.Polygon):
             if layer is None: layer = (points.layer, points.datatype)
             points = points.points
         elif isinstance(points, gdspy.PolygonSet):
             if layer is None:   layers = points.layers
-            else:               layers = [layer]*len(points.polygons)
+            layers = [layer]*len(points.polygons)
             return [self.add_polygon(p, layer) for p, layer in zip(points.polygons, layers)]
                 
-        gds_layer, gds_datatype = _parse_layer(layer)
-            
+        # Check if layer is actually a list of Layer objects
+        try:    
+            if all([isinstance(l, (Layer)) for l in layer]):
+                return [self.add_polygon(points, l) for l in layer]
+            elif len(layer) > 2: # Someone wrote e.g. layer = [1,4,5]
+                raise ValueError(""" [PHIDL] When using add_polygon() with 
+                    multiple layers, each element in your `layer` argument
+                    list must be of type Layer(), e.g.:
+                    `layer = [Layer(1,0), my_layer, Layer(4)]""")
+        except: pass
+
+        # # If layer is None, return a Polygon but don't actually
+        # # add it to the geometry
+        # if layer is None:
+        #     return Polygon(points = [(0,0)], gds_layer = 0,
+        #     gds_datatype = 0, parent = None)
+        
+
         if len(points[0]) > 2: # Then it has the form [[1,3,5],[2,4,6]]
             # Convert to form [[1,2],[3,4],[5,6]]
             points = np.column_stack((points))
+
+        gds_layer, gds_datatype = _parse_layer(layer)
         # # Close polygon manually
         # if not np.array_equal(points[0],points[-1]):
         #     points = np.vstack((points, points[0]))
-        polygon = Polygon(points, gds_layer, gds_datatype)
+        polygon = Polygon(points = points, gds_layer = gds_layer,
+            gds_datatype = gds_datatype, parent = self)
         self.add(polygon)
         return polygon
         
@@ -522,7 +570,7 @@ class Device(gdspy.Cell, _GeometryHelper):
         Can also be called to copy an existing port with a new name like add_port(port = existing_port, name = new_name)"""
         if port is not None:
             if not isinstance(port, Port):
-                raise ValueError('[DEVICE] add_port() error: Argument `port` must be a Port for copying')
+                raise ValueError('[PHIDL] add_port() error: Argument `port` must be a Port for copying')
             p = port._copy()
             p.parent = self
         elif isinstance(name, Port):
@@ -608,6 +656,7 @@ class Device(gdspy.Cell, _GeometryHelper):
         self.elements = []
         [self.add_polygon(poly) for poly in temp]
 
+        self._bb_valid = False
         return self
 
 
@@ -623,6 +672,8 @@ class Device(gdspy.Cell, _GeometryHelper):
             if isinstance(item, DeviceReference):
                 # If appears in list of aliases, remove that alias
                 self.aliases = { k:v for k, v in self.aliases.items() if v != item}
+
+        self._bb_valid = False
         return self
 
     
@@ -637,6 +688,7 @@ class Device(gdspy.Cell, _GeometryHelper):
         for p in self.ports.values():
             p.midpoint = _rotate_points(p.midpoint, angle, center)
             p.orientation = mod(p.orientation + angle, 360)
+        self._bb_valid = False
         return self
             
     def move(self, origin = (0,0), destination = None, axis = None):
@@ -677,6 +729,7 @@ class Device(gdspy.Cell, _GeometryHelper):
         for l in self.labels:
             l.translate(dx,dy)
         
+        self._bb_valid = False
         return self
             
     def reflect(self, p1 = (0,1), p2 = (0,0)):
@@ -689,6 +742,7 @@ class Device(gdspy.Cell, _GeometryHelper):
             p.midpoint = _reflect_points(p.midpoint, p1, p2)
             phi = np.arctan2(p2[1]-p1[1], p2[0]-p1[0])*180/pi
             p.orientation = 2*phi - p.orientation
+        self._bb_valid = False
         return self
     
     
@@ -809,6 +863,7 @@ class DeviceReference(gdspy.CellReference, _GeometryHelper):
         # This needs to be done in two steps otherwise floating point errors can accrue
         dxdy = np.array(d) - np.array(o)
         self.origin = np.array(self.origin) + dxdy
+        self.parent._bb_valid = False
         return self
 
         
@@ -816,6 +871,7 @@ class DeviceReference(gdspy.CellReference, _GeometryHelper):
         if type(center) is Port:  center = center.midpoint
         self.rotation += angle
         self.origin = _rotate_points(self.origin, angle, center)
+        self.parent._bb_valid = False
         return self
         
         
@@ -840,6 +896,8 @@ class DeviceReference(gdspy.CellReference, _GeometryHelper):
         self.origin = _rotate_points(self.origin, angle = angle, center = [0,0])
         self.rotation += angle
         self.origin = self.origin + p1
+
+        self.parent._bb_valid = False
         return self
         
 
@@ -865,14 +923,14 @@ class DeviceReference(gdspy.CellReference, _GeometryHelper):
 
 
 def quickplot(items, show_ports = True, show_subports = True,
-              label_ports = True, label_aliases = False, new_window = True):
+              label_ports = True, label_aliases = False, new_window = False):
     """ Takes a list of devices/references/polygons or single one of those, and
     plots them.  Also has the option to overlay their ports """
     if new_window: fig, ax = plt.subplots(1)
     else:
         ax = plt.gca()  # Get current figure
         ax.cla()        # Clears the axes of all previous polygons
-    plt.axis('equal')
+    ax.axis('equal')
     ax.grid(True, which='both', alpha = 0.4)
     ax.axhline(y=0, color='k', alpha = 0.2, linewidth = 1)
     ax.axvline(x=0, color='k', alpha = 0.2, linewidth = 1)
@@ -893,15 +951,15 @@ def quickplot(items, show_ports = True, show_subports = True,
                         _draw_port_as_point(port)
                     else:
                         _draw_port(port, arrow_scale = 2, shape = 'full', color = 'k')
-                    plt.text(port.midpoint[0], port.midpoint[1], name)
+                    ax.text(port.midpoint[0], port.midpoint[1], name)
             if isinstance(item, Device) and show_subports is True:
                 for sd in item.references:
                     for name, port in sd.ports.items():
                         _draw_port(port, arrow_scale = 1, shape = 'right', color = 'r')
-                        plt.text(port.midpoint[0], port.midpoint[1], name)
+                        ax.text(port.midpoint[0], port.midpoint[1], name)
             if isinstance(item, Device) and label_aliases is True:
                 for name, ref in item.aliases.items():
-                    plt.text(ref.x, ref.y, str(name), style = 'italic', color = 'blue',
+                    ax.text(ref.x, ref.y, str(name), style = 'italic', color = 'blue',
                              weight = 'bold', size = 'large', ha = 'center')
         elif isinstance(item, gdspy.Polygon):
             polygons = [item.points]
@@ -919,6 +977,7 @@ def quickplot(items, show_ports = True, show_subports = True,
         display.clear_output(wait=True)
     else:
         plt.draw()
+        plt.show(block = False)
 
 
 def _get_layerprop(layer, datatype):
