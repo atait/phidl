@@ -63,9 +63,49 @@ def tech_files(search_pattern, exactly_one=False):
     return matches
 
 
-def tech_top():
+#### Functions that are similar to what SiEPIC does ####
+
+from .utilities import read_lyp
+def get_technology():
+    ''' This is similar to what SiEPIC tools does, except 
+        1. using phidl.Layer instead of pya.LayerInfo, and
+        2. using ``active_technology``
+    '''
     with open(tech_files('*.lyt', exactly_one=True)[0]) as fx:
-        return xml_to_dict(fx.read())
+        klayout_techdef = xml_to_dict(fx.read())  # KLayout toplevel technology definition. Mostly useless options for reading LEF and DXF
+    technology = {}
+    technology['technology_name'] = klayout_techdef['technology']['name']
+    technology['dbu'] = klayout_techdef['technology']['dbu']
+    # technology['base_path'] = os.path.expanduser(klayout_techdef['technology']['original_base_path'])
+    technology['base_path'] = available_tech_paths[active_technology]
+    lyp_file = os.path.join(technology['base_path'], klayout_techdef['technology']['layer-properties_file'])
+    lys_object = read_lyp(lyp_file)
+    # this makes it so you can call technology['si'] and get the same thing as lys['si']
+    for lay_name in lys_object._layers:
+        technology[lay_name] = lys_object[lay_name]
+    return technology
+
+
+def get_technology_by_name(tech_name):
+    ''' This is similar to what SiEPIC tools does, except 
+        1. using phidl.Layer instead of pya.LayerInfo
+    '''
+    set_technology_name(techname)
+    return get_technology()
+
+
+#### Finally something interesting: getting layers ####
+
+def get_LayerSet():
+    with open(tech_files('*.lyt', exactly_one=True)[0]) as fx:
+        klayout_techdef = xml_to_dict(fx.read())  # KLayout toplevel technology definition. Mostly useless options for reading LEF and DXF
+    lyp_file_relative = klayout_techdef['technology']['layer-properties_file']
+    lyp_file = os.path.join(available_tech_paths[active_technology], lyp_file_relative)
+    return read_lyp(lyp_file)
+
+
+#### Technology properties ####
+
 
 def tech_properties_dict(search_pattern='*.xml'):
     ''' Puts everything that matches the search_pattern in one dictionary,
