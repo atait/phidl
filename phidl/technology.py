@@ -160,8 +160,13 @@ def dict_to_object(tech_dict):
 #### Helpers ####
 
 class obj(object):
+    casts = None
+
     def __init__(self, **attributes):
         self._namedattributes = list(attributes.keys())
+        for k, v in attributes.items():
+            if k in self.casts:
+                attributes[k] = self.casts[k](v)
         self.__dict__.update(attributes)
 
     def __repr__(self):
@@ -188,16 +193,79 @@ def handle_names(dicts_with_name):
 
 
 #### Specific tech categories ####
-
+from phidl.device_layout import Device
+import phidl.geometry as pg
+from phidl.routing import _arc
+lys = get_LayerSet()
+import numpy as np
+from phidl.quickplotter import quickplot2 as qp
 class Waveguide(obj):
     components = None
-    radius = None
-    loss = None
+    casts = dict(radius=float, loss=float)
+
+    def cell_straight(self, length, no_taper=False):
+        WG = Device()
+        maxwidth = 0
+        for comp in self.components:
+            el = WG.add_ref(pg.rectangle(size=[length, comp.width], layer=lys[comp.layer]))
+            el.y -= comp.width / 2
+            maxwidth = max(maxwidth, comp.width)
+        WG.add_port(name = 'wgport1', midpoint = [0,0], width = maxwidth, orientation = 180)
+        WG.add_port(name = 'wgport2', midpoint = [length, 0], width = maxwidth, orientation = 0)
+        return WG
+
+    def cell_bend(self, radius=None, theta=90):
+        BEND = Device()
+        if radius is None:
+            radius = self.radius
+        maxwidth = 0
+        for comp in self.components:
+            if theta < 0:
+                start_angle = 90
+            else:
+                start_angle = -90
+            el = BEND.add_ref(_arc(radius=radius, width=comp.width, 
+                                     theta=theta, start_angle=start_angle, 
+                                     angle_resolution=2.5, layer=lys[comp.layer]))
+            el.move(origin=el.ports[1].midpoint, destination = (0,0))
+            maxwidth = max(maxwidth, comp.width)
+        BEND.add_port(name = 'wgport1', midpoint = el.ports[1].midpoint, width = maxwidth, orientation = el.ports[1].orientation)
+        BEND.add_port(name = 'wgport2', midpoint = el.ports[2].midpoint, width = maxwidth, orientation = el.ports[2].orientation)
+        return BEND
+
+    def cell_points(self, ptlist):
+        import pdb; pdb.set_trace()
+        WG = Device()
+        points = np.asarray(ptlist)
+        dxdy = points[1:] - points[:-1]
+        angles = (np.arctan2(dxdy[:,1], dxdy[:,0])).tolist()
+        angles = np.array(angles + [angles[-1]]) * 180 / np.pi
+        da = angles[1:] - angles[:-1]
+        lengths = np.sqrt(np.sum(dxdy ** 2, axis=1))
+        next_point = points[0]
+        for iSegment in range(len(lengths)):
+            adj_len = lengths[iSegment] 
+            if iSegment > 0:
+                adj_len -= self.radius * abs(np.tan(da[iSegment-1] * np.pi / 180))
+            if iSegment < len(lengths) - 1:
+                adj_len -= self.radius * abs(np.tan(da[iSegment] * np.pi / 180))
+            straight = self.cell_straight(adj_len)
+            if iSegment < len(lengths)-1:
+                bent = self.cell_bend(theta=da[iSegment])
+                bent.move([adj_len, 0])
+                be = straight.add_ref(bent)
+            straight.rotate(angles[iSegment]).move(next_point)
+            st = WG.add_ref(straight)
+            next_point = be.ports['wgport2'].midpoint
+            # be = WG.add_ref(bent)
+            # be.move(be.ports['wgport1'].midpoint, st.ports['wgport2'])
+        return WG
+
+
 
 class WaveguideComponent(obj):
+    casts = dict(width=float, offset=float)
     layer = None
-    width = None
-    offset = None
 
 
 def WAVEGUIDES():
@@ -213,6 +281,22 @@ def WAVEGUIDES():
             wg_components.append(WaveguideComponent(**comp))
         wg_dict[wg_key] = Waveguide(components=wg_components, **wg)
     return wg_dict
+
+
+class Transition(obj):
+    casts = dict(length=float, loss=float, bezier=float)
+
+
+def TRANSISTIONS():
+    top_list = tech_properties_dict('WAVEGUIDES')['waveguides']['transition']
+    if not isinstance(top_list, list): top_list = [top_list]
+    tr_keys = handle_names(top_list)
+    tr_dict = dict()
+    for tr_key, tr in zip(tr_keys, top_list):
+        tr_dict['from'] = tr_key.split(' to ')[0]
+        tr_dict['to'] = tr_key.split(' to ')[1]
+        tr_dict[tr_key] = Transition(**tr)
+    return tr_dict
 
 
 class Conductor(obj):
