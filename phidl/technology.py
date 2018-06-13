@@ -144,14 +144,11 @@ class TechnologyTree(object):
         self.name = name
 
 
-
-
-def xml_to_object(t):
-    raw = xml_to_dict_raw(t)
+def dict_to_object(tech_dict):
     # Find entries that are named, remove that item and key a new dictionary with its value
-    treename = list(raw.keys())[0]
+    treename = list(tech_dict.keys())[0]
     te = TechnologyTree(treename)
-    for k, v in raw[treename].items():
+    for k, v in tech_dict[treename].items():
         try:
             elName = v['name']
         except KeyError:
@@ -159,6 +156,8 @@ def xml_to_object(t):
         else:
             setattr(te, k, v)
 
+
+#### Helpers ####
 
 class obj(object):
     def __init__(self, **attributes):
@@ -170,6 +169,25 @@ class obj(object):
         fullstr = ', '.join(attrstrs)
         return f'{type(self).__name__}({fullstr})'
 
+
+def handle_names(dicts_with_name):
+    ''' Takes a list of dicts with "name" key
+        Returns a list of names and MODIFIES THE DICTS
+
+        Handles those without names by creating unique names
+    '''
+    name_keys = []
+    iunnamed = 0
+    for named_dict in dicts_with_name:
+        name = named_dict.pop('name', None)
+        if name is None:
+            name = f'Unnamed {iunnamed}'
+            iunnamed += 1
+        name_keys.append(name)
+    return name_keys
+
+
+#### Specific tech categories ####
 
 class Waveguide(obj):
     components = None
@@ -183,22 +201,66 @@ class WaveguideComponent(obj):
 
 
 def WAVEGUIDES():
-    top_dict = tech_properties_dict('WAVEGUIDES')['waveguides']['waveguide']
+    top_list = tech_properties_dict('WAVEGUIDES')['waveguides']['waveguide']
+    if not isinstance(top_list, list): top_list = [top_list]
+    wg_keys = handle_names(top_list)
     wg_dict = dict()
-    iunnamed = 0
-    for wg in top_dict:
-        wg_key = wg.pop('name', None)
-        if wg_key is None:
-            wg_key = f'Unnamed {iunnamed}'
-            iunnamed += 1
-        wg_radius = wg.pop('radius', None)
+    for wg_key, wg in zip(wg_keys, top_list):
         loaded_components = wg.pop('component', list())
-        if not isinstance(loaded_components, list):
-            loaded_components = [loaded_components]
+        if not isinstance(loaded_components, list): loaded_components = [loaded_components]
         wg_components = []
         for comp in loaded_components:
             wg_components.append(WaveguideComponent(**comp))
-        wg_dict[wg_key] = Waveguide(radius=wg_radius, components=wg_components)
-        if len(wg) > 0:
-            print(f'Unhandled: {wg.keys()}')
+        wg_dict[wg_key] = Waveguide(components=wg_components, **wg)
     return wg_dict
+
+
+class Conductor(obj):
+    pass
+    # type = None
+    # layer = None
+    # material = None
+    # thickness = None
+    # sheet = None
+
+class Dopant(obj):
+    pass
+
+class Semiconductor(obj):
+    ''' A doped semiconductor is a conductor '''
+    def doped_with(self, dopant):
+        if isinstance(dopant, str):
+            dopant = self.dopants[dopant]
+        new_attrs = dict((k, getattr(self, k)) for k in self._namedattributes)
+        new_attrs.pop('dopants')
+        new_attrs['layer'] = [self.layer, dopant.layer]
+        new_attrs['sheet'] = dopant.sheet
+        return Conductor(**new_attrs)
+
+
+def CONDUCTORS():
+    top_list = tech_properties_dict('CONDUCTORS')['conductors']['conductor']
+    if not isinstance(top_list, list): top_list = [top_list]
+    cond_keys = handle_names(top_list)
+    cond_dict = dict()
+    for cond_key, cond in zip(cond_keys, top_list):
+        dp_list = cond.pop('doped', None)
+        if dp_list is not None:
+            if not isinstance(dp_list, list): dp_list = [dp_list]
+            cond['dopants'] = dict()
+            dp_keys = handle_names(dp_list)
+            for dp_key, dp in zip(dp_keys, dp_list):
+                theDopant = Dopant(**dp)
+                cond['dopants'][dp_key] = theDopant
+            theSemiconductor = Semiconductor(**cond)
+            cond_dict[cond_key] = theSemiconductor
+            for dp_key in dp_keys:
+                cond_dict[cond_key + ' - ' + dp_key] = theSemiconductor.doped_with(dp_key)
+        else:
+            cond_dict[cond_key] = Conductor(**cond)
+        # loaded_components = cond.pop('component', list())
+        # if not isinstance(loaded_components, list): loaded_components = [loaded_components]
+        # cond_components = []
+        # for comp in loaded_components:
+        #     cond_components.append(WaveguideComponent(**comp))
+    return cond_dict
