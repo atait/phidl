@@ -1,18 +1,20 @@
 ''' This module interfaces with KLayout
 '''
 
-# Is SiEPIC Tools installed?
+# Is KLayout installed?
 import os
 klayout_dir = os.path.expanduser('~/.klayout/salt')
 if not os.path.isdir(klayout_dir):
     raise ImportError('KLayout does not seem to be installed.\nDid not find "~/.klayout"')
 
-available_technologies = []
+available_tech_paths = dict()
 for root, dirnames, filenames in os.walk(klayout_dir, followlinks=True):
     if os.path.split(root)[1] == 'tech':
-        available_technologies.extend(dirnames)
+        for technology_name in dirnames:
+            available_tech_paths[technology_name] = os.path.join(root, technology_name)
 
-from .device_layout import Layer
+
+from .utilities import read_lyp
 def get_technology_by_name(tech_name):
     klayout_techdef = tech_top()
     technology = {}
@@ -23,48 +25,11 @@ def get_technology_by_name(tech_name):
     lyp_file = os.path.join(TECHNOLOGY_PATH, klayout_techdef['technology']['layer-properties_file'])
     with open(lyp_file, 'r') as fx:
         layer_dict = xml_to_dict(fx.read())['layer-properties']['properties']
-    # technology['layers'] = layer_dict
-    for k in layer_dict:
-        layerInfo = k['source'].split('@')[0]
-        # if 'group-members' in k:
-        #     # encoutered a layer group, look inside:
-        #     j = k['group-members']
-        #     if 'name' in j:
-        #         layerInfo_j = j['source'].split('@')[0]
-        #         technology[j['name']] = pya.LayerInfo(
-        #             int(layerInfo_j.split('/')[0]), int(layerInfo_j.split('/')[1]))
-        #     else:
-        #         for j in k['group-members']:
-        #             layerInfo_j = j['source'].split('@')[0]
-        #             technology[j['name']] = pya.LayerInfo(
-        #                 int(layerInfo_j.split('/')[0]), int(layerInfo_j.split('/')[1]))
-        #     if k['source'] != '*/*@*':
-        #         technology[k['name']] = pya.LayerInfo(
-        #             int(layerInfo.split('/')[0]), int(layerInfo.split('/')[1]))
-        # else:
-        technology[k['name']] = Layer(gds_layer=int(layerInfo.split('/')[0]), 
-                                      gds_datatype=int(layerInfo.split('/')[1]))
+    lys_object = read_lyp(lyp_file)
+    # this makes it so you can call technology['si'] and get the same thing as lys['si']
+    for lay in lys_object._layers:
+        technology[lay.name] = lay
     return technology
-
-    # # Layers:
-    # file = open(lyp_file, 'r')
-    # layer_dict = xml_to_dict(file.read())['layer-properties']['properties']
-    # file.close()
-
-
-    # return technology
-
-# available_packages = os.listdir(os.path.join(klayout_dir, 'salt'))
-# # required_packages = ['siepic_tools', 'xsection']
-# siepic_python_dir = os.path.join(klayout_dir, 'salt/siepic_tools/python')
-# if not os.path.isdir(siepic_python_dir):
-#     raise ImportError('SiEPIC Tools does not seem to be installed.\nIts name must be exactly "~/.klayout/salt/siepic_tools"')
-
-# import sys
-# sys.path.append(siepic_python_dir)
-
-# from . import pyamock as pya
-# import SiEPIC
 
 
 # Todo
@@ -73,9 +38,6 @@ def get_technology_by_name(tech_name):
 # Parse them into prettier dictionaries depending
 
 
-# XML to Dict parser, from:
-# https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary-in-python/10077069
-import fnmatch
 
 
 import os

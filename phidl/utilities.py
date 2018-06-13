@@ -106,6 +106,8 @@ def read_lyp(filename):
             phidl_LayerArgs['name'] = name_components[1].strip()
         if len(name_components) == 3:
             phidl_LayerArgs['description'] = name_components[2].strip()[1:-1]
+        # if 'group-members' in entry.keys():
+        #    not supported
         lys.add_layer(**phidl_LayerArgs)
     return lys
 
