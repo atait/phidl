@@ -137,6 +137,8 @@ def tech_properties_dict(search_pattern='*.xml'):
     return full_dict
 
 
+#### Packaging in a more useful way: stripped top and object-like accessors ####
+
 class TechnologyTree(object):
     def __init__(self, name):
         self.name = name
@@ -158,5 +160,45 @@ def xml_to_object(t):
             setattr(te, k, v)
 
 
+class obj(object):
+    def __init__(self, **attributes):
+        self._namedattributes = list(attributes.keys())
+        self.__dict__.update(attributes)
+
+    def __repr__(self):
+        attrstrs = (f'{k}={getattr(self, k)}' for k in self._namedattributes)
+        fullstr = ', '.join(attrstrs)
+        return f'{type(self).__name__}({fullstr})'
+
+
+class Waveguide(obj):
+    components = None
+    radius = None
+    loss = None
+
+class WaveguideComponent(obj):
+    layer = None
+    width = None
+    offset = None
+
+
 def WAVEGUIDES():
-    pass
+    top_dict = tech_properties_dict('WAVEGUIDES')['waveguides']['waveguide']
+    wg_dict = dict()
+    iunnamed = 0
+    for wg in top_dict:
+        wg_key = wg.pop('name', None)
+        if wg_key is None:
+            wg_key = f'Unnamed {iunnamed}'
+            iunnamed += 1
+        wg_radius = wg.pop('radius', None)
+        loaded_components = wg.pop('component', list())
+        if not isinstance(loaded_components, list):
+            loaded_components = [loaded_components]
+        wg_components = []
+        for comp in loaded_components:
+            wg_components.append(WaveguideComponent(**comp))
+        wg_dict[wg_key] = Waveguide(radius=wg_radius, components=wg_components)
+        if len(wg) > 0:
+            print(f'Unhandled: {wg.keys()}')
+    return wg_dict
