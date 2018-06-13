@@ -1,3 +1,72 @@
+''' This module interfaces with KLayout
+'''
+
+# Is SiEPIC Tools installed?
+import os
+klayout_dir = os.path.expanduser('~/.klayout/salt')
+if not os.path.isdir(klayout_dir):
+    raise ImportError('KLayout does not seem to be installed.\nDid not find "~/.klayout"')
+
+available_technologies = []
+for root, dirnames, filenames in os.walk(klayout_dir, followlinks=True):
+    if os.path.split(root)[1] == 'tech':
+        available_technologies.extend(dirnames)
+
+from .device_layout import Layer
+def get_technology_by_name(tech_name):
+    klayout_techdef = tech_top()
+    technology = {}
+    technology['technology_name'] = klayout_techdef['technology']['name']
+    technology['dbu'] = klayout_techdef['technology']['dbu']
+    # technology['base_path'] = os.path.expanduser(klayout_techdef['technology']['original_base_path'])
+    technology['base_path'] = TECHNOLOGY_PATH
+    lyp_file = os.path.join(TECHNOLOGY_PATH, klayout_techdef['technology']['layer-properties_file'])
+    with open(lyp_file, 'r') as fx:
+        layer_dict = xml_to_dict(fx.read())['layer-properties']['properties']
+    # technology['layers'] = layer_dict
+    for k in layer_dict:
+        layerInfo = k['source'].split('@')[0]
+        # if 'group-members' in k:
+        #     # encoutered a layer group, look inside:
+        #     j = k['group-members']
+        #     if 'name' in j:
+        #         layerInfo_j = j['source'].split('@')[0]
+        #         technology[j['name']] = pya.LayerInfo(
+        #             int(layerInfo_j.split('/')[0]), int(layerInfo_j.split('/')[1]))
+        #     else:
+        #         for j in k['group-members']:
+        #             layerInfo_j = j['source'].split('@')[0]
+        #             technology[j['name']] = pya.LayerInfo(
+        #                 int(layerInfo_j.split('/')[0]), int(layerInfo_j.split('/')[1]))
+        #     if k['source'] != '*/*@*':
+        #         technology[k['name']] = pya.LayerInfo(
+        #             int(layerInfo.split('/')[0]), int(layerInfo.split('/')[1]))
+        # else:
+        technology[k['name']] = Layer(gds_layer=int(layerInfo.split('/')[0]), 
+                                      gds_datatype=int(layerInfo.split('/')[1]))
+    return technology
+
+    # # Layers:
+    # file = open(lyp_file, 'r')
+    # layer_dict = xml_to_dict(file.read())['layer-properties']['properties']
+    # file.close()
+
+
+    # return technology
+
+# available_packages = os.listdir(os.path.join(klayout_dir, 'salt'))
+# # required_packages = ['siepic_tools', 'xsection']
+# siepic_python_dir = os.path.join(klayout_dir, 'salt/siepic_tools/python')
+# if not os.path.isdir(siepic_python_dir):
+#     raise ImportError('SiEPIC Tools does not seem to be installed.\nIts name must be exactly "~/.klayout/salt/siepic_tools"')
+
+# import sys
+# sys.path.append(siepic_python_dir)
+
+# from . import pyamock as pya
+# import SiEPIC
+
+
 # Todo
 # Find the right path (github?, .pathto file?)
 # ~Read xml files~
@@ -6,47 +75,16 @@
 
 # XML to Dict parser, from:
 # https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary-in-python/10077069
-from collections import defaultdict
-from xml.etree import cElementTree
 import fnmatch
 
 
 import os
 with open('../.pathtotech', 'r') as file:
-    tech_path = file.read()
-TECHNOLOGY_PATH = tech_path
+    TECHNOLOGY_PATH = os.path.expanduser(file.read()).strip()
 
 
 #### Helpers
 
-
-def etree_to_dict(t):
-    d = {t.tag: {} if t.attrib else None}
-    children = list(t)
-    if children:
-        dd = defaultdict(list)
-        for dc in map(etree_to_dict, children):
-            for k, v in dc.items():
-                dd[k].append(v)
-        d = {t.tag: {k: v[0] if len(v) == 1 else v for k, v in dd.items()}}
-    if t.attrib:
-        d[t.tag].update(('@' + k, v) for k, v in t.attrib.items())
-    if t.text:
-        text = t.text.strip()
-        if children or t.attrib:
-            if text:
-                d[t.tag]['#text'] = text
-        else:
-            d[t.tag] = text
-    return d
-
-
-def xml_to_dict(t):
-    try:
-        e = cElementTree.XML(t)
-    except:
-        raise IOError("Error in the XML string.")
-    return etree_to_dict(e)
 
 
 #### Low level
@@ -72,6 +110,10 @@ def tech_files(search_pattern, exactly_one=False):
                                     '\n'.join(matches))
     return matches
 
+
+def tech_top():
+    with open(tech_files('*.lyt', exactly_one=True)[0]) as fx:
+        return xml_to_dict(fx.read())
 
 def tech_properties_dict(search_pattern='*.xml'):
     ''' Puts everything that matches the search_pattern in one dictionary,
