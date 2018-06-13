@@ -234,31 +234,36 @@ class Waveguide(obj):
         return BEND
 
     def cell_points(self, ptlist):
-        import pdb; pdb.set_trace()
         WG = Device()
+        # Compute angles and lengths (not accounting for arcs) of segments
         points = np.asarray(ptlist)
         dxdy = points[1:] - points[:-1]
         angles = (np.arctan2(dxdy[:,1], dxdy[:,0])).tolist()
         angles = np.array(angles + [angles[-1]]) * 180 / np.pi
-        da = angles[1:] - angles[:-1]
+        turns = angles[1:] - angles[:-1]
+        if any(abs(turns) > 165):
+            raise ValueError('Too sharp of turns.')
         lengths = np.sqrt(np.sum(dxdy ** 2, axis=1))
+
         next_point = points[0]
         for iSegment in range(len(lengths)):
+            if lengths[iSegment] == 0:
+                continue
             adj_len = lengths[iSegment] 
             if iSegment > 0:
-                adj_len -= self.radius * abs(np.tan(da[iSegment-1] * np.pi / 180))
+                adj_len -= self.radius * abs(np.tan(turns[iSegment-1] / 2 * np.pi / 180))
             if iSegment < len(lengths) - 1:
-                adj_len -= self.radius * abs(np.tan(da[iSegment] * np.pi / 180))
+                adj_len -= self.radius * abs(np.tan(turns[iSegment] / 2 * np.pi / 180))
+            if adj_len < 0:
+                raise ValueError('Length was negative. Points are too close together or turns are too sharp')
             straight = self.cell_straight(adj_len)
             if iSegment < len(lengths)-1:
-                bent = self.cell_bend(theta=da[iSegment])
+                bent = self.cell_bend(theta=turns[iSegment])
                 bent.move([adj_len, 0])
                 be = straight.add_ref(bent)
             straight.rotate(angles[iSegment]).move(next_point)
             st = WG.add_ref(straight)
             next_point = be.ports['wgport2'].midpoint
-            # be = WG.add_ref(bent)
-            # be.move(be.ports['wgport1'].midpoint, st.ports['wgport2'])
         return WG
 
 
