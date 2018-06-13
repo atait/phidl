@@ -125,6 +125,9 @@ def in_ipynb():
         return False
 
 
+# XML to Dict parser, from:
+# https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary-in-python/10077069
+
 def etree_to_dict(t):
     ''' Used recursively '''
     d = {t.tag: {} if t.attrib else None}

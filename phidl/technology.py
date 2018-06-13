@@ -1,56 +1,46 @@
 ''' This module interfaces with KLayout
 '''
+import fnmatch
+from .utilities import xml_to_dict
 
-# Is KLayout installed?
+#### What technologies are in KLayout? ####
 import os
-klayout_dir = os.path.expanduser('~/.klayout/salt')
-if not os.path.isdir(klayout_dir):
+klayout_application_path = os.path.expanduser('~/.klayout')  # This might not work on Windows
+if not os.path.isdir(klayout_application_path):
     raise ImportError('KLayout does not seem to be installed.\nDid not find "~/.klayout"')
 
 available_tech_paths = dict()
-for root, dirnames, filenames in os.walk(klayout_dir, followlinks=True):
+for root, dirnames, filenames in os.walk(os.path.join(klayout_application_path, 'salt'), followlinks=True):
     if os.path.split(root)[1] == 'tech':
         for technology_name in dirnames:
             available_tech_paths[technology_name] = os.path.join(root, technology_name)
 
 
-from .utilities import read_lyp
-def get_technology_by_name(tech_name):
-    klayout_techdef = tech_top()
-    technology = {}
-    technology['technology_name'] = klayout_techdef['technology']['name']
-    technology['dbu'] = klayout_techdef['technology']['dbu']
-    # technology['base_path'] = os.path.expanduser(klayout_techdef['technology']['original_base_path'])
-    technology['base_path'] = TECHNOLOGY_PATH
-    lyp_file = os.path.join(TECHNOLOGY_PATH, klayout_techdef['technology']['layer-properties_file'])
-    with open(lyp_file, 'r') as fx:
-        layer_dict = xml_to_dict(fx.read())['layer-properties']['properties']
-    lys_object = read_lyp(lyp_file)
-    # this makes it so you can call technology['si'] and get the same thing as lys['si']
-    for lay in lys_object._layers:
-        technology[lay.name] = lay
-    return technology
+#### technology name handling ####
+
+def klayout_last_open_technology():
+    rc_file = os.path.join(klayout_application_path, 'klayoutrc')
+    with open(rc_file, 'r') as file:
+        rc_dict = xml_to_dict(file.read())
+    return rc_dict['config']['initial-technology']
 
 
-# Todo
-# Find the right path (github?, .pathto file?)
-# ~Read xml files~
-# Parse them into prettier dictionaries depending
+active_technology = klayout_last_open_technology()
 
 
+def set_technology_name(technology_name):
+    if technology_name not in available_tech_paths.keys():
+        raise ValueError(f'{technology_name} was not found in available technologies:'
+                         ', '.join(available_tech_paths.keys()))
+    global active_technology
+    active_technology = technology_name
 
 
-import os
-with open('../.pathtotech', 'r') as file:
-    TECHNOLOGY_PATH = os.path.expanduser(file.read()).strip()
+def get_technology_name():
+    return active_technology
 
 
-#### Helpers
-
-
-
-#### Low level
-
+#### scanning the technology for included files ####
 
 def tech_files(search_pattern, exactly_one=False):
     ''' Searches the technology base path for a file search pattern.
@@ -59,7 +49,7 @@ def tech_files(search_pattern, exactly_one=False):
             search_pattern (str): file pattern. Default is all XML property files
             exactly_one (bool): Do we expect to find exactly one matching file? If we don't, error
     '''
-    dir_path = TECHNOLOGY_PATH
+    dir_path = available_tech_paths[active_technology]
     matches = []
     for root, dirnames, filenames in os.walk(dir_path, followlinks=True):
         for filename in fnmatch.filter(filenames, search_pattern):
