@@ -11,19 +11,30 @@
 
 
 class PropertyStruct(object):
-    casts = []
+    #: Attributes of these names will be cast to the corresponding type (i.e. float)
+    casts = None
 
     def __init__(self, **attributes):
         self._namedattributes = list(attributes.keys())
-        for k, v in attributes.items():
-            if k in self.casts:
-                attributes[k] = self.casts[k](v)
+        if self.casts is not None:
+            for k, v in attributes.items():
+                if k in self.casts:
+                    attributes[k] = self.casts[k](v)
         self.__dict__.update(attributes)
 
     def __repr__(self):
         attrstrs = (f'{k}={getattr(self, k)}' for k in self._namedattributes)
         fullstr = ', '.join(attrstrs)
         return f'{type(self).__name__}({fullstr})'
+
+
+def ly_valid(given_layer_name):
+    ''' Use this as a fake cast that validates that the layer is present, 
+        but keeps the string as a string
+    '''
+    if given_layer_name is not None and given_layer_name not in layers():
+        raise KeyError(f'Layer name {given_layer_name} not present in the layer set.')
+    return given_layer_name
 
 
 #: All of the technology properties, not to be directly accessed, rather through below functions
@@ -57,12 +68,12 @@ def better_getitem(category_dict, element_name):
     else:
         try:
             return category_dict[element_name]
-        except KeyError:
-            raise KeyError(f'{element_name} not found in available elements: ' +
-                           str(list(category_dict.keys())))
+        except KeyError as err:
+            err.args = (err.args[0] + '. Available are: ' + str(list(category_dict.keys())), )
+            raise
 
 
-def wgXSections(wg_name=None):
+def waveguides(wg_name=None):
     return better_getitem(PROPERTIES.WAVEGUIDES, wg_name)
 
 
@@ -83,11 +94,13 @@ def vias(via_name=None):
 
 
 def layers(layer_name=None):
-    return better_getitem(LAYERS, layer_name)
+    return better_getitem(LAYERS._layers, layer_name)
 
 
 # Import all submodule functions and classes so they are visible outside
-from . import select, loader, properties
+import phidl.technology.select
+import phidl.technology.loader
+import phidl.technology.properties
 from phidl.technology.select import *
 from phidl.technology.loader import *
 from phidl.technology.properties import *

@@ -1,7 +1,7 @@
 ''' Specific categories of properties for integrated photonics.
     Developed for silicon
 '''
-from . import PropertyStruct, layers, wgXSection
+from . import PropertyStruct, layers, waveguides, ly_valid
 from .loader import get_properties_from_file
 
 
@@ -99,8 +99,7 @@ class WGXSection(PropertyStruct):
 
 
 class WGXSectionComponent(PropertyStruct):
-    casts = dict(width=float, offset=float)
-    layer = None
+    casts = dict(width=float, offset=float, layer=ly_valid)
 
 
 def load_waveguides():
@@ -128,8 +127,8 @@ class Transition(PropertyStruct):
         else:
             source = self.dest
             dest = self.source
-        wg_source = wgXSection(source)
-        wg_dest = wgXSection(dest)
+        wg_source = waveguides(source)
+        wg_dest = waveguides(dest)
         # Find all of the relevant layers
         layer_names = set()
         for c in wg_source.components:
@@ -169,9 +168,8 @@ def load_transitions():
 
 
 class Conductor(PropertyStruct):
-    casts = dict(thickness=float, sheet=float)
+    casts = dict(thickness=float, sheet=float, layer=ly_valid)
     # type = None
-    # layer = None
     # material = None
 
 class Dopant(PropertyStruct):
@@ -184,7 +182,6 @@ class Semiconductor(PropertyStruct):
             dopant = self.dopants[dopant]
         new_attrs = dict((k, getattr(self, k)) for k in self._namedattributes)
         new_attrs.pop('dopants')
-        new_attrs['layer'] = [self.layer, dopant.layer]
         new_attrs['sheet'] = dopant.sheet
         return Conductor(**new_attrs)
 
