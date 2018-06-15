@@ -26,7 +26,7 @@ class PropertyStruct(object):
         return f'{type(self).__name__}({fullstr})'
 
 
-#: All of the technology properties
+#: All of the technology properties, not to be directly accessed, rather through below functions
 PROPERTIES = None
 def reload_properties():
     tech_dict = dict(WAVEGUIDES=properties.load_waveguides(),
@@ -38,44 +38,52 @@ def reload_properties():
     PROPERTIES = PropertyStruct(**tech_dict)
 
 
-def wgXSection(wg_name=None):
-    if wg_name is None:
-        return list(PROPERTIES.WAVEGUIDES.keys())
-    else:
-        try:
-            return PROPERTIES.WAVEGUIDES[wg_name]
-        except KeyError:
-            raise KeyError(f'Waveguide {wg_name} not found in available waveguides: ' +
-                           str(wgXSection(None)))
-
-
-def transitions(tr_name=None):
-    if tr_name is None:
-        return list(PROPERTIES.TRANSISTIONS.keys())
-    else:
-        try:
-            return PROPERTIES.TRANSISTIONS[tr_name]
-        except KeyError:
-            raise KeyError(f'Transition {tr_name} not found in available: ' +
-                           str(transitions(None)))
-
-
-#: The technology layer definitions as a ``LayerSet``
+#: The technology layer definitions as a ``LayerSet``, to be accessed through ``layers`` function
 LAYERS = None
 def reload_layers():
     global LAYERS
     LAYERS = loader.get_layerset()
 
 
-def layers(layer_name=None):
-    if layer_name is None:
-        return list(LAYERS.keys())
+#### Accessors ####
+
+def better_getitem(category_dict, element_name):
+    ''' Similar to ``category_dict.__getitem__(element_name)``, except
+        returns the possible keys when element_name is None, and
+        includes the possible keys when raising KeyError
+    '''
+    if element_name is None:
+        return list(category_dict.keys())
     else:
         try:
-            return LAYERS[layer_name]
+            return category_dict[element_name]
         except KeyError:
-            raise KeyError(f'Layer {layer_name} not found in available layers: ' +
-                           str(layers(None)))
+            raise KeyError(f'{element_name} not found in available elements: ' +
+                           str(list(category_dict.keys())))
+
+
+def wgXSections(wg_name=None):
+    return better_getitem(PROPERTIES.WAVEGUIDES, wg_name)
+
+
+def transitions(tr_name=None):
+    return better_getitem(PROPERTIES.TRANSISTIONS, tr_name)
+
+
+def wires(wire_name=None):
+    return better_getitem(PROPERTIES.WIRES, wire_name)
+
+
+def conductors(cond_name=None):
+    return better_getitem(PROPERTIES.CONDUCTORS, cond_name)
+
+
+def vias(via_name=None):
+    return better_getitem(PROPERTIES.VIAS, via_name)
+
+
+def layers(layer_name=None):
+    return better_getitem(LAYERS, layer_name)
 
 
 # Import all submodule functions and classes so they are visible outside
