@@ -1,7 +1,8 @@
 ''' Specific categories of properties for integrated photonics.
     Developed for silicon
 '''
-from . import PropertyStruct, layers, waveguides, ly_valid
+from . import PropertyStruct, waveguides, ly_valid
+from . import layers as tech_lys
 from .loader import get_properties_from_file
 
 
@@ -36,7 +37,7 @@ class WGXSection(PropertyStruct):
         WG = Device()
         maxwidth = 0
         for comp in self.components:
-            el = WG.add_ref(pg.rectangle(size=[length, comp.width], layer=layers(comp.layer)))
+            el = WG.add_ref(pg.rectangle(size=[length, comp.width], layer=tech_lys(comp.layer)))
             el.y -= comp.width / 2
             maxwidth = max(maxwidth, comp.width)
         WG.add_port(name = 'wgport1', midpoint = [0,0], width = maxwidth, orientation = 180)
@@ -56,7 +57,7 @@ class WGXSection(PropertyStruct):
                 start_angle = -90
             el = BEND.add_ref(_arc(radius=radius, width=comp.width, 
                                      theta=theta, start_angle=start_angle, 
-                                     angle_resolution=2.5, layer=layers(comp.layer)))
+                                     angle_resolution=2.5, layer=tech_lys(comp.layer)))
             el.move(origin=el.ports[1].midpoint, destination = (0,0))
             maxwidth = max(maxwidth, comp.width)
         BEND.add_port(name = 'wgport1', midpoint = el.ports[1].midpoint, width = maxwidth, orientation = el.ports[1].orientation)
@@ -147,7 +148,7 @@ class Transition(PropertyStruct):
         for lName, widths in layer_widths.items():
             maxwidths[0] = max(maxwidths[0], widths[0])
             maxwidths[1] = max(maxwidths[1], widths[1])
-            lt = pg.taper(length=self.length, width1=widths[0], width2=widths[1], layer=layers(lName))
+            lt = pg.taper(length=self.length, width1=widths[0], width2=widths[1], layer=tech_lys(lName))
             lt.ports = dict()
             D.add_ref(lt)
         D.add_port(name = 'wgport1', midpoint = [0,0], width = maxwidths[0], orientation = 180)
@@ -214,9 +215,54 @@ def load_conductors():
     return cond_dict
 
 
-def load_vias():
-    pass
+class Via(PropertyStruct):
+    casts = dict(resistance=float, resistivity=float, min_size=float, layer=ly_valid)
+    components = None
 
+    def cell(self, size=None):
+        if size is None:
+            size = self.min_size
+        if np.isscalar(size):
+            size = [size, size]
+        size = np.asarray(size)
+        if any(size < self.min_size):
+            raise ValueError(f'Via with size {size} is too small. Minimum = {self.min_size}.')
+
+        V = Device()
+        try:
+            assert self.layer is not None
+        except (AttributeError, AssertionError):
+            pass
+        else:
+            hole = V.add_ref(pg.rectangle(size, layer=tech_lys(self.layer)))
+            hole.center = (0, 0)
+        for comp in self.components:
+            pad = V.add_ref(pg.rectangle(size + comp.inclusion, layer=tech_lys(comp.layer)))
+            pad.center = (0, 0)
+        return V
+
+class ViaComponent(PropertyStruct):
+    casts = dict(inclusion=float, layer=ly_valid)
+
+
+def load_vias():
+    top_list = get_properties_from_file('VIAS')['vias']['via']
+    if not isinstance(top_list, list): top_list = [top_list]
+    via_keys = pull_names(top_list)
+    via_dict = dict()
+    for via_key, via in zip(via_keys, top_list):
+        loaded_components = via.pop('component', list())
+        if not isinstance(loaded_components, list): loaded_components = [loaded_components]
+        via_components = []
+        for comp in loaded_components:
+            via_components.append(ViaComponent(**comp))
+        via_dict[via_key] = Via(components=via_components, **via)
+    return via_dict
+
+
+class Wire(PropertyStruct):
+    pass
 
 def load_wires():
     pass
+
