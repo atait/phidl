@@ -1,7 +1,5 @@
 import operator
-from collections import defaultdict
-from xml.etree import cElementTree
-
+import xmltodict
 
 def write_lyp(filename, layerset):
     """ Creates a KLayout .lyp Layer Properties file from a set of 
@@ -86,12 +84,13 @@ def write_lyp(filename, layerset):
         # Writing layer properties trailer
         f.write('</layer-properties>\n')
 
-from lygadgets import xml_to_dict
+
 def read_lyp(filename):
     from phidl.device_layout import LayerSet
     if filename[-4:] != '.lyp': filename = filename + '.lyp'
     with open(filename, 'r') as fx:
-        lyp_list = xml_to_dict(fx.read())['layer-properties']['properties']
+        lyp_dict = xmltodict.parse(fx.read(), process_namespaces=True)
+    lyp_list = ['layer-properties']['properties']
 
     lys = LayerSet()
     def add_entry(entry):
