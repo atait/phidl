@@ -86,30 +86,67 @@ def write_lyp(filename, layerset):
         # Writing layer properties trailer
         f.write('</layer-properties>\n')
 
-
+from lygadgets import xml_to_dict
 def read_lyp(filename):
-    from .device_layout import LayerSet
+    from phidl.device_layout import LayerSet
     if filename[-4:] != '.lyp': filename = filename + '.lyp'
     with open(filename, 'r') as fx:
         lyp_list = xml_to_dict(fx.read())['layer-properties']['properties']
+
     lys = LayerSet()
-    for entry in lyp_list:
-        phidl_LayerArgs = dict()
+    def add_entry(entry):
         layerInfo = entry['source'].split('@')[0]
         phidl_LayerArgs['gds_layer'] = int(layerInfo.split('/')[0])
         phidl_LayerArgs['gds_datatype'] = int(layerInfo.split('/')[1])
         phidl_LayerArgs['color'] = entry['fill-color']
-        name_components = entry['name'].split(' - ')
-        if len(name_components) == 1:
-            phidl_LayerArgs['name'] = name_components[0].strip()
-        else:
-            phidl_LayerArgs['name'] = name_components[1].strip()
-        if len(name_components) == 3:
-            phidl_LayerArgs['description'] = name_components[2].strip()[1:-1]
-        # if 'group-members' in entry.keys():
-        #    not supported
+        phidl_LayerArgs['name'] = name2shortName(entry['name'])
+        phidl_LayerArgs['description'] = name2description(entry['name'])
         lys.add_layer(**phidl_LayerArgs)
+
+    for entry in lyp_list:
+        if 'group-members' in entry:
+            continue
+        phidl_LayerArgs = dict()
+        try:
+            group_members = entry['group-members']
+        except KeyError:  # it is a real layer
+            add_entry(entry)
+        else:
+            if not isinstance(group_members, list):
+                group_members = [group_members]
+            for member in group_members:
+                add_entry(member)
     return lys
+
+
+def name2shortName(name_str):
+    ''' Good to have this function separate because
+        it may differ for different naming conventions.
+
+        Reassign with::
+
+            soen.soen_utils.name2shortName = someOtherFunction
+    '''
+    if name_str is None:
+        raise IOError('This layer has no name')
+    components = name_str.split(' - ')
+    if len(components) > 1:
+        short_name = components[1]
+    else:
+        short_name = components[0]
+    return short_name
+
+
+def name2description(name_str):
+    ''' Not strictly necessary and only works with this naming convention '''
+    if name_str is None:
+        raise IOError('This layer has no name')
+    components = name_str.split(' - ')
+    description = None
+    if len(components) > 2:
+        description = components[2][1:-1]
+    return description
+
 
 
 def in_ipynb():
@@ -123,36 +160,3 @@ def in_ipynb():
             return False
     except NameError:
         return False
-
-
-# XML to Dict parser, from:
-# https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary-in-python/10077069
-
-def etree_to_dict(t):
-    ''' Used recursively '''
-    d = {t.tag: {} if t.attrib else None}
-    children = list(t)
-    if children:
-        dd = defaultdict(list)
-        for dc in map(etree_to_dict, children):
-            for k, v in dc.items():
-                dd[k].append(v)
-        d = {t.tag: {k: v[0] if len(v) == 1 else v for k, v in dd.items()}}
-    if t.attrib:
-        d[t.tag].update(('@' + k, v) for k, v in t.attrib.items())
-    if t.text:
-        text = t.text.strip()
-        if children or t.attrib:
-            if text:
-                d[t.tag]['#text'] = text
-        else:
-            d[t.tag] = text
-    return d
-
-
-def xml_to_dict(t):
-    try:
-        e = cElementTree.XML(t)
-    except:
-        raise IOError("Error in the XML string.")
-    return etree_to_dict(e)
