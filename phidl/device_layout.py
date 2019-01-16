@@ -167,6 +167,7 @@ class Layer(object):
                 (self.name, self.gds_layer, self.gds_datatype, self.description, self.color))
                          
     def __lt__(self, other):
+        # Sometimes there are comparisons between a Layer and an integer in quickplot
         selfIntVal = self.gds_layer
         if type(other) is Layer:
             otherIntVal = other.gds_layer
@@ -175,6 +176,7 @@ class Layer(object):
         return selfIntVal < otherIntVal
 
     def __gt__(self, other):
+        # Sometimes there are comparisons between a Layer and an integer in quickplot
         selfIntVal = self.gds_layer
         if type(other) is Layer:
             otherIntVal = other.gds_layer
