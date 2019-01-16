@@ -25,6 +25,7 @@ clean:
 	rm -rf phidl.egg-info
 	rm -rf build
 	rm -rf venvinfo
+	rm -rf .pytest_cache
 	$(MAKE) -C docs clean
 
 purge: clean
