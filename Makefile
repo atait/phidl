@@ -36,6 +36,22 @@ dynamic-install:
 	pip uninstall phidl
 	pip install -e .
 
+testbuild: venvinfo/testreqs~
+venvinfo/testreqs~: $(REINSTALL_DEPS) test-requirements.txt
+	( \
+		source venv/bin/activate; \
+		pip install -r test-requirements.txt | grep -v 'Requirement already satisfied'; \
+		pip install -e . | grep -v 'Requirement already satisfied'; \
+	)
+	@mkdir -p venvinfo
+	touch venvinfo/testreqs~
+
+test: testbuild
+	( \
+		source venv/bin/activate; \
+		pytest tests; \
+	)
+
 docbuild: venvinfo/docreqs~
 venvinfo/docreqs~: $(REINSTALL_DEPS) doc-requirements.txt
 	( \
@@ -58,9 +74,11 @@ help:
 	@echo "  purge             clean and delete virtual environment"
 	@echo "  dynamic-install   have pip dynamically link phidl to this source code, everywhere on your computer"
 	@echo "--- testing ---"
+	@echo "  testbuild         install test dependencies, build phidl, and install inside venv"
+	@echo "  test              perform basic unit tests"
 	@echo "--- documentation ---"
 	@echo "  docbuild          install doc dependencies, rebuild phidl, and install in venv"
 	@echo "  docs              build documentation"
 
 
-.PHONY: help docs clean purge dynamic-install
+.PHONY: help docs clean purge dynamic-install test
