@@ -15,6 +15,8 @@ DOCTYPE_DEFAULT = html
 # General dependencies for devbuild, docbuild
 REINSTALL_DEPS = $(shell find phidl -type f) venv setup.py
 
+TESTARGS = -s --cov=phidl --cov-config .coveragerc
+
 venv: venv/bin/activate
 venv/bin/activate:
 	test -d venv || virtualenv -p python3 --prompt "(phidl-venv) " --distribute venv
@@ -49,7 +51,7 @@ venvinfo/testreqs~: $(REINSTALL_DEPS) test-requirements.txt
 test: testbuild
 	( \
 		source venv/bin/activate; \
-		pytest tests; \
+		pytest $(TESTARGS) tests; \
 	)
 
 docbuild: venvinfo/docreqs~

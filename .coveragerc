@@ -1,0 +1,6 @@
+# We don't want to count the tutorial as part of the codebase being covered
+[run]
+omit = phidl/phidl_tutorial_example.py
+
+[report]
+omit = phidl/phidl_tutorial_example.py
