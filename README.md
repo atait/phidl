@@ -6,7 +6,7 @@ PHotonic and Integrated Device Layout - GDS CAD layout and geometry creation for
 - [Installation / requirements](#installation--requirements)
 - [About PHIDL](#about-phidl)
 - [Changelog](#changelog)
-- [Tutorial + examples](https://github.com/amccaugh/phidl/blob/master/phidl/phidl_tutorial_example.py#L40)
+- [Tutorial + examples](https://github.com/amccaugh/phidl/blob/master/phidl/phidl_tutorial_example.py#L35)
 
 # Installation / requirements
 - Install or upgrade with `pip install -U phidl`
@@ -17,7 +17,9 @@ PHotonic and Integrated Device Layout - GDS CAD layout and geometry creation for
 
 # About PHIDL
 
-PHIDL is an open-source GDS-based CAD tool for Python 2 and 3 which extends and simplifies the excellent [gdspy](https://github.com/heitzmann/gdspy). It strives to simplify GDSII geometry creation by making the design process layout-driven, rather than coordinate-driven.  The base installation includes a large library of simple shapes (e.g. rectangles, circles), photonic structures (e.g. sine curve waveguides), and superconducting nanowire shapes (e.g. single photon detectors) which are fully parameterized. It also has a built-in quick-plotting function based on Qt (or matplotlib) which allows you view the state of any GDS object, useful when scripting geometry-making functions. It also has a [__very thorough tutorial__](https://github.com/amccaugh/phidl/blob/master/phidl/phidl_tutorial_example.py#L40) as well which will walk you through the process of getting acquainted with PHIDL.
+*fiddle (verb) - /ˈfidl/ - to make minor manual movements, especially to adjust something*
+
+PHIDL is an open-source GDS-based CAD tool for Python 2 and 3 which extends and simplifies the excellent [gdspy](https://github.com/heitzmann/gdspy). It strives to simplify GDSII geometry creation by making the design process layout-driven, rather than coordinate-driven.  The base installation includes a large library of simple shapes (e.g. rectangles, circles), photonic structures (e.g. sine curve waveguides), and superconducting nanowire shapes (e.g. single photon detectors) which are fully parameterized. It also has a built-in quick-plotting function based on Qt (or matplotlib) which allows you view the state of any GDS object, useful when scripting geometry-making functions. It also has a [__very thorough tutorial__](https://github.com/amccaugh/phidl/blob/master/phidl/phidl_tutorial_example.py#L35) as well which will walk you through the process of getting acquainted with PHIDL.
 
 The purpose of PHIDL is to fill a void in the GDS design space: creation of elements in a simple, layout-driven, parameterized way, without a large amount of code overhead. Many GDS tools exist, but they tend to fall in one of two categories: (1) GUI-based layout tools with ad-hoc scripting interfaces, or (2) full-featured Cadence-style layout software which requires 30 lines of boilerplate/overhead code just to draw a simple ring. 
 
@@ -46,12 +48,26 @@ It also allows you to do things like add text and create smooth or straight rout
 ![phidl example image](https://amccaugh.github.io/phidl/readme_4.png)
     
 
-Other useful functionality available are standard operations like booleans and less standard ones like creating outlines.  With a single line function, you can outline a complex meander structure (blue color) attached to a contact pad, very useful when using positive-tone electron-beam lithography resists.  A whole complicated layout can be outlined directly in the GDS without requiring you to use Beamer:
+Other useful functionality available are standard operations like booleans:
+
+![phidl example image](https://amccaugh.github.io/phidl/readme_8.png)
+
+ and less standard ones like creating outlines. A whole layout can be outlined directly in the GDS without requiring you to use Beamer (useful for positive-tone resist structures):
 
 `pg.outline(D, distance = 0.7, layer = 4)`
 
-![phidl example image](https://amccaugh.github.io/phidl/readme_5.jpg)
+![phidl example image](https://amccaugh.github.io/phidl/readme_5.png)
  
+The geometry library also has useful resolution test-structures built into it, for instance
+
+```
+pg.litho_calipers(num_notches = 7, offset_per_notch = 0.1)
+pg.litho_steps(line_widths = [1,2,4,8,16])
+pg.litho_star(num_lines = 16, line_width = 3)
+```
+
+![phidl example image](https://amccaugh.github.io/phidl/readme_7.png)
+
 
 You can also do things like create a backing fill to make sure the resist develops uniformly while still creating a solid ground plane, with user-defined margins.  Below is an image of a device which needed a ground plane.  A single-line fill function was able to fill the required area (purple), electrically connecting all of the ground structures together:
 
@@ -60,6 +76,30 @@ You can also do things like create a backing fill to make sure the resist develo
 
 
 # Changelog
+
+## 1.0.2 (March 26, 2019)
+
+### New features
+- Added tutorial section for phidl.geometry library lithographic shapes (resolution tests, calipers, stars, etc)
+- Added `symmetric` argument to pg.optimal_step()
+
+### Changes
+- Precision for boolean functions set to 1e-6 by default now
+- `position` argument removed from pg.text()
+
+### Bugfixes
+- Fixed rare but persistent bug affecting boolean operations on polygons with sub-precision floating point errors.  Will no longer cause jagged edges when two points are misaligned by very small amounts (e.g. points differ by 4e-27 units)
+- Fix for `remove_layers()` correctly preserves references now  (contribution thanks to Alex Tait @atait)
+- Suppressed unecessary warnings
+
+
+## 1.0.1 (Jan 21, 2019)
+
+### New features
+- `D.remove()` can now remove Ports as well as references/polygons
+
+### Bugfixes
+- Can't have a major release without at least one bug!  Fixed errors introduced by optimized-rotation algorithm.
 
 ## 1.0.0 (Jan 14, 2019)
 - 1.0 release!  The core functionality of phidl has been stable for over 18 months, and all major planned features have been implemented.  Time to reflect that in the version number!
