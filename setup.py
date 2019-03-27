@@ -6,13 +6,12 @@ install_requires=[
    'gdspy>=1.3.1',
    'numpy',
    'matplotlib',
-   'pyyaml',
-   'scikit-image>=0.11',
+   'scipy',
    'webcolors',
 ]
 
 setup(name='phidl',
-      version='0.9.1',
+      version='1.0.1',
       description='PHIDL',
       install_requires=install_requires,
       author='Adam McCaughan',
