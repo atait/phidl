@@ -84,3 +84,4 @@ target/
 *.lyp
 *.oas
 *.ipynb
+*.svg
