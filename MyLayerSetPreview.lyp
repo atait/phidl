@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-properties>
  <properties>
-  <frame-color>#808080</frame-color>
-  <fill-color>#808080</fill-color>
+  <frame-color>#daa520</frame-color>
+  <fill-color>#daa520</fill-color>
   <frame-brightness>-25</frame-brightness>
   <dither-pattern>I2</dither-pattern>
   <line-style/>
@@ -13,7 +13,7 @@
   <marked>false</marked>
   <xfill>false</xfill>
   <animation>0</animation>
-  <name>4/0 - ti - (Titanium resistor)</name>
+  <name>4/0 - au - (Gold wiring)</name>
   <source>4/0@1</source>
  </properties>
  <properties>

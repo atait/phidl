@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import division, print_function, absolute_import
 import numpy as np
 import itertools
@@ -14,6 +15,7 @@ import copy as python_copy
 from collections import OrderedDict
 import pickle
 import os
+import json
 import warnings
 
 
@@ -712,8 +714,9 @@ def import_gds(filename, cellname = None, flatten = False):
             D_list += [D]
 
         for D in D_list:
-            new_elements = []
-            for e in D.elements:
+            unconverted_elements = D.elements
+            D.elements = []
+            for e in unconverted_elements:
                 if isinstance(e, gdspy.CellReference):
                     ref_device = c2dmap[e.ref_cell]
                     dr = DeviceReference(device = ref_device,
@@ -722,10 +725,13 @@ def import_gds(filename, cellname = None, flatten = False):
                         magnification = e.magnification,
                         x_reflection = e.x_reflection,
                         )
-                    new_elements.append(dr)
+                    D.elements.append(dr)
+                elif isinstance(e, gdspy.PolygonSet):
+                    D.add_polygon(e)
                 else:
-                    new_elements.append(e)
-            D.elements = new_elements
+                    warnings.warn('[PHIDL] import_gds(). Warning an element which was not a ' \
+                        'polygon or reference exists in the GDS, and was not able to be imported. ' \
+                        'The element was a: "%s"' % e)
 
         topdevice = c2dmap[topcell]
         return topdevice
@@ -804,10 +810,10 @@ def preview_layerset(ls, size = 100):
         T = text(
                 text = '%s\n%s / %s' % (layer.name, layer.gds_layer, layer.gds_datatype),
                 size = 20*scale,
-                position=(50*scale,-20*scale),
                 justify = 'center',
                 layer = layer)
 
+        T.move((50*scale,-20*scale))
         xloc = n % matrix_size
         yloc = int(n // matrix_size)
         D.add_ref(R).movex(200 * xloc *scale).movey(-200 * yloc*scale)
@@ -837,6 +843,89 @@ class device_lru_cache:
             self.memo[pickle_str] = cached_output
             # Then return a copy of the cached Device
             return deepcopy(cached_output)
+
+
+def port_to_geometry(port, layer = 0):
+    ''' Converts a Port to a label and a triangle Device that are then added to the parent.
+        The Port must start with a parent.
+    '''
+    if port.parent is None:
+        raise ValueError('Port {}: Port needs a parent in which to draw'.format(port.name))
+
+    # A visual marker
+    triangle_points = [[0, 0]] * 3
+    triangle_points[0] = port.endpoints[0]
+    triangle_points[1] = port.endpoints[1]
+    triangle_points[2] = (port.midpoint + (port.normal - port.midpoint) * port.width / 10)[1]
+    port.parent.add_polygon(triangle_points, layer)
+
+    # Label carrying actual information that will be recovered
+    label_contents = (str(port.name),
+                      # port.midpoint,  # rather than put this in the text, use the label position
+                      float(np.round(port.width, decimals=3)),  # this can have rounding errors that are less than a nanometer
+                      float(port.orientation),
+                      # port.parent,  # this is definitely not serializable
+                      # port.info,  # would like to include, but it might go longer than 1024 characters
+                      # port.uid,  # not including because it is part of the build process, not the port state
+                     )
+    label_text = json.dumps(label_contents)
+    port.parent.label(text = label_text, position = port.midpoint + calculate_label_offset(port),
+                      magnification = .04 * port.width, rotation = (90 + port.orientation) % 360,
+                      layer = layer)
+
+
+def calculate_label_offset(port):
+    ''' Used to put the label in a pretty position.
+        It is added when drawing and substracted when extracting.
+    '''
+    offset_position = np.array((-np.cos(np.pi / 180 * port.orientation),
+                                -np.sin(np.pi / 180 * port.orientation)))
+    offset_position *= port.width * .05
+    return offset_position
+
+
+def geometry_to_port(label, layer = 0):
+    ''' Converts a label into a Port in the parent Device.
+        The label contains name, width, orientation.
+        Does not remove that label from the parent.
+        Returns the new port.
+    '''
+    name, width, orientation = json.loads(label.text)
+    new_port = Port(name=name, width=width, orientation=orientation)
+    new_port.midpoint = label.position - calculate_label_offset(new_port)
+    return new_port
+
+
+def with_geometric_ports(device, layer = 0):
+    ''' Converts Port objects over the whole Device hierarchy to geometry and labels.
+        layer: the special port record layer
+        Does not change the device used as argument. Returns a new one lacking all Ports.
+    '''
+    temp_device = deepcopy(device)
+    all_cells = list(temp_device.get_dependencies(recursive=True))
+    all_cells.append(temp_device)
+    for subcell in all_cells:
+        for port in subcell.ports.values():
+            port_to_geometry(port, layer=layer)
+            subcell.remove(port)
+    return temp_device
+
+
+def with_object_ports(device, layer = 0):
+    ''' Converts geometry representing ports over the whole Device hierarchy into Port objects.
+        layer: the special port record layer
+        Does not mutate the device in the argument. Returns a new one lacking all port geometry (incl. labels)
+    '''
+    temp_device = deepcopy(device)
+    all_cells = list(temp_device.get_dependencies(recursive=True))
+    all_cells.append(temp_device)
+    for subcell in all_cells: # Walk through cells
+        for lab in subcell.labels:
+            if lab.layer == layer:
+                the_port = geometry_to_port(lab)
+                subcell.add_port(name=the_port.name, port=the_port)
+    temp_device.remove_layers(layers=[layer], include_labels=True)
+    return temp_device
 
 
 #==============================================================================
@@ -1342,7 +1431,7 @@ _glyph[123] = [[[100,500],[200,600],[200,1000],[400,1200],[500,1200],[500,1000],
 _glyph[124] = [[[100,-100],[100,1100],[300,1100],[300,-100],[100,-100]]]
 _glyph[125] = [[[500,500],[400,600],[400,1000],[200,1200],[100,1200],[100,1000],[200,1000],[ 200,600],[300,500],[200,400],[200,0],[100,0],[100,-200],[200,-200],[400,0],[400,400],[500,500]]]
 _glyph[126] = [[[100,700],[250,800],[350,800],[650,600],[750,600],[900,700],[ 900,500],[ 750,400],[650,400],[350,600],[250,600],[100,500],[100,700]]]
-_glyph[230] = [[[300,700],[300,300],[400,200],[500,200],[600,300],[600,700],[800,700],[800,0],[600,0],[ 600,100],[500,0],[400,0],[300,100],[300,-300],[100,-300],[100,700],[300,700]]]
+_glyph[181] = [[[300,700],[300,300],[400,200],[500,200],[600,300],[600,700],[800,700],[800,0],[600,0],[ 600,100],[500,0],[400,0],[300,100],[300,-300],[100,-300],[100,700],[300,700]]]
 
 
 # _glyph _widths and _indents
@@ -1440,7 +1529,7 @@ _width[123] = 500;  _indent[123] = 100  # {
 _width[124] = 400;  _indent[124] = 100  # |
 _width[125] = 500;  _indent[125] = 100  # }
 _width[126] = 800;  _indent[126] = 100  # ~
-_width[230] = 700;  _indent[230] = 100  # Greek mu
+_width[181] = 700;  _indent[181] = 100  # Greek mu
 
 def text(text = 'abcd', size = 10, justify = 'left', layer = 0):
     scaling = size/1000
@@ -1454,14 +1543,14 @@ def text(text = 'abcd', size = 10, justify = 'left', layer = 0):
             ascii_val = ord(c)
             if c == ' ':
                 xoffset += 500*scaling
-            elif (33 <= ascii_val <= 126) or (ascii_val == 230):
+            elif (33 <= ascii_val <= 126) or (ascii_val == 181):
                 for poly in _glyph[ascii_val]:
                     xpts = np.array(poly)[:,0]*scaling
                     ypts = np.array(poly)[:,1]*scaling
                     l.add_polygon([xpts + xoffset,ypts + yoffset], layer=layer)
                 xoffset += (_width[ascii_val] + _indent[ascii_val])*scaling
             else:
-                valid_chars = '!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~æ'
+                valid_chars = '!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~µ'
                 warnings.warn('[PHIDL] text(): Warning, some characters ignored, no geometry for character "%s" with ascii value %s. ' \
                 'Valid characters: %s'  % (chr(ascii_val), ascii_val,valid_chars))
         t.add_ref(l)
