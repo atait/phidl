@@ -30,6 +30,8 @@ from numpy import sqrt, mod, pi, sin, cos
 from numpy.linalg import norm
 import webcolors
 import warnings
+import yaml
+import os
 import hashlib
 
 
@@ -77,7 +79,7 @@ def _parse_coordinate(c, ports = {}):
         return c.midpoint
     elif np.array(c).size == 2:
         return c
-    elif c in ports: 
+    elif c in ports:
         return ports[c].midpoint
     else:
         return None
@@ -646,6 +648,28 @@ class Device(gdspy.Cell, _GeometryHelper):
         self.name = tempname
         return filename
 
+    def write_oas(self, filename, **write_kwargs):
+        if filename.lower().endswith('.gds'):
+            # you are looking for write_gds
+            self.write_gds(filename, **write_kwargs)
+            return
+        try:
+            import klayout.db as pya
+        except ImportError as err:
+            err.args = ('[PHIDL] klayout package needed to write OASIS. pip install klayout\n' + err.args[0], ) + err.args[1:]
+            raise
+        if not filename.lower().endswith('.oas'): filename += '.oas'
+        fileroot = os.path.splitext(filename)[0]
+        tempfilename = fileroot + '-tmp.gds'
+
+        self.write_gds(tempfilename, **write_kwargs)
+        layout = pya.Layout()
+        layout.read(tempfilename)
+        # there can only be one top_cell because we only wrote one device
+        topcell = layout.top_cell()
+        topcell.write(filename)
+        os.remove(tempfilename)
+        return filename
 
     def remap_layers(self, layermap = {}, include_labels = True):
         layermap = {_parse_layer(k):_parse_layer(v) for k,v in layermap.items()}
@@ -676,13 +700,30 @@ class Device(gdspy.Cell, _GeometryHelper):
         all_D = list(self.get_dependencies(True))
         all_D += [self]
         for D in all_D:
-            for polygonset in D.polygons:
-                polygon_layers = zip(polygonset.layers, polygonset.datatypes)
-                polygons_to_keep = [(pl in layers) for pl in polygon_layers]
-                if invert_selection == False: polygons_to_keep = [(not p) for p in polygons_to_keep]
-                polygonset.polygons =  [p for p,keep in zip(polygonset.polygons,  polygons_to_keep) if keep]
-                polygonset.layers =    [p for p,keep in zip(polygonset.layers,    polygons_to_keep) if keep]
-                polygonset.datatypes = [p for p,keep in zip(polygonset.datatypes, polygons_to_keep) if keep]
+            new_elements = []
+            for e in D.elements:
+                if isinstance(e, gdspy.PolygonSet):
+                    new_polygons = []
+                    new_layers = []
+                    new_datatypes = []
+                    for n, layer in enumerate(e.layers):
+                        original_layer = (e.layers[n], e.datatypes[n])
+                        original_layer = _parse_layer(original_layer)
+                        if invert_selection: keep_layer = (original_layer in layers)
+                        else:                keep_layer = (original_layer not in layers)
+                        if keep_layer:
+                            new_polygons += [e.polygons[n]]
+                            new_layers += [e.layers[n]]
+                            new_datatypes += [e.datatypes[n]]
+                     # Don't re-add an empty polygon
+                    if len(new_polygons) > 0:
+                        e.polygons = new_polygons
+                        e.layers = new_layers
+                        e.datatypes = new_datatypes
+                        new_elements.append(e)
+                if isinstance(e, DeviceReference):
+                    new_elements.append(e)
+            D.elements = new_elements
 
             if include_labels == True:
                 new_labels = []
