@@ -70,6 +70,28 @@ def test_offset():
     h = D.hash_geometry(precision = 1e-4)
     assert(h == 'dea81b4adf9f163577cb4c750342f5f50d4fbb6d')
 
+def test_invert():
+    A = pg.cross(length = 10, width = 3, layer = 0)
+    B = pg.ellipse(radii = (10,5), angle_resolution = 2.5, layer = 1)
+    D = pg.invert([A,B], border = 4,  precision = 1e-6, layer = 2)
+    h = D.hash_geometry(precision = 1e-4)
+    assert(h == 'eed5a4cb31da61a495c9ff4c5dc4d06fe28707aa')
+
+def test_boolean():
+    A = pg.cross(length = 10, width = 3, layer = 0)
+    B = pg.ellipse(radii = (10,5), angle_resolution = 2.5, layer = 1)
+    D = pg.boolean(A = A, B = B, operation = 'and',  precision = 1e-6, layer = 2)
+    h = D.hash_geometry(precision = 1e-4)
+    assert(h == 'fcf1d0809488be01480027a5914dfb399faf088c')
+
+def test_outline():
+    A = pg.cross(length = 10, width = 3, layer = 0)
+    B = pg.ellipse(radii = (10,5), angle_resolution = 2.5, layer = 1)
+    D = pg.outline([A,B], distance = 1, precision = 1e-6, layer = 2)
+    h = D.hash_geometry(precision = 1e-4)
+    assert(h == '503522b071080be6c98017cdc616752c1a3d75ce')
+
+
 def test_port_geometry():
     # Conversion between object and geometric representation of ports
     def geom_equal(A, B):
@@ -77,8 +99,8 @@ def test_port_geometry():
         h2 = B.hash_geometry(precision = 1e-4)
         return h1 == h2
     init_D = pg.compass(layer = 1)
-    geom_D = pg.with_geometric_ports(init_D, layer = 2)
-    end_D = pg.with_object_ports(geom_D, layer = 2)
+    geom_D = pg.ports_to_geometry(init_D, layer = 2)
+    end_D = pg.geometry_to_ports(geom_D, layer = 2)
     assert geom_equal(init_D, end_D)
 
     assert len(geom_D.ports) == 0
@@ -135,3 +157,45 @@ def test_copy_deepcopy():
     assert(h == '2590bd786348ab684616eecdfdbcc9735b156e18')
     h = Ddeepcopy.hash_geometry(precision = 1e-4)
     assert(h == '0313cd7e58aa265b44dd1ea10265d1088a2f1c6d')
+
+
+def test_write_and_import_gds():
+    D = Device()
+    D.add_ref(pg.rectangle(size=[1.5,2.7], layer = [3,2]))
+    D.add_ref(pg.rectangle(size=[0.8,2.5], layer = [9,7]))
+    D.add_array(pg.rectangle(size=[1,2], layer = [4,66]), rows = 3,
+                      columns = 2, spacing = [14,7.5])
+    D.add_array(pg.rectangle(size=[1.5,2.5], layer = [4,67]), rows = 1,
+                      columns = 2, spacing = [14,7.5])
+    D.add_polygon([[3,4,5], [6.7, 8.9, 10.15]], layer = [7,8])
+    D.add_polygon([[3,4,5], [1.7, 8.9, 10.15]], layer = [7,9])
+    precision = 1e-4
+    unit = 1e-6
+    h1 = D.hash_geometry(precision = precision)
+    D.write_gds('temp.gds', precision = unit*precision, unit = 1e-6)
+    Dimport = pg.import_gds('temp.gds', flatten = False)
+    h2 = Dimport.hash_geometry(precision = precision)
+    assert(h1 == h2)
+
+def test_packer():
+    np.random.seed(5)
+    D_list = [pg.ellipse(radii = np.random.rand(2)*n+2).move(np.random.rand(2)*100+2) for n in range(50)]
+    D_list += [pg.rectangle(size = np.random.rand(2)*n+2).move(np.random.rand(2)*1000+2) for n in range(50)]
+
+    D_packed_list = pg.packer(
+            D_list,       # Must be a list or tuple of Devices
+            spacing = 1.25, # Minimum distance between adjacent shapes
+            aspect_ratio = (1,2), # Shape of the box
+            max_size = (None,None), # Limits the size into which the shapes will be packed
+            density = 1.5,
+            sort_by_area = True, # Pre-sorts the shapes by area
+            verbose = False,
+            )
+    # The function will return a list of packed Devices.  If not all the Devices
+    # in D_list can fit in the area `max_size`, it will fill up the first box to
+    # capacity then create another, repeating until all the shapes are packed 
+    # into boxes of max_size.  (`max_size` can be (None, None))
+    # of `max_size` as is necessary
+    D = D_packed_list[0]
+    h = D.hash_geometry(precision = 1e-4)
+    assert(h == 'd90e43693a5840bdc21eae85f56fdaa57fdb88b2')

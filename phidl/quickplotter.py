@@ -8,16 +8,19 @@ import sys
 import warnings
 
 import phidl
-from phidl.device_layout import Device, DeviceReference, Port, Layer, Polygon
+from phidl.device_layout import Device, DeviceReference, CellArray
+from phidl.device_layout import Layer, Polygon, Path, _rotate_points
 import gdspy
 
+_SUBPORT_RGB = (0,120,120)
+_PORT_RGB = (190,0,0)
 
 try:
     from matplotlib import pyplot as plt
+    from matplotlib.collections import PolyCollection
+    matplotlib_imported = True
 except:
-    warnings.warn("""PHIDL tried to import matplotlib but it failed. PHIDL
-                     will still work but quickplot() may not.  Try using
-                     quickplot2() instead (see note in tutorial) """)
+    matplotlib_imported = False
 
 try:
     from PyQt5 import QtCore, QtGui
@@ -25,63 +28,103 @@ try:
     from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QRect, QSize,QSizeF,  QCoreApplication, QLineF
     from PyQt5.QtGui import QColor, QPolygonF, QPen
 
-    PORT_COLOR = QColor(190,0,0)
-    SUBPORT_COLOR = QColor(0,135,135)
+    PORT_COLOR = QColor(*_PORT_RGB)
+    SUBPORT_COLOR = QColor(*_SUBPORT_RGB)
     OUTLINE_PEN = QColor(200,200,200)
+    qt_imported = True
 except:
     QMainWindow = object
     QGraphicsView = object
-    warnings.warn("""PHIDL tried to import PyQt5 but it failed. PHIDL will
-                     still work but quickplot2() may not.  Try using
-                     quickplot() instead (based on matplotlib) """)
+    qt_imported = False
 
 
 def quickplot(items, show_ports = True, show_subports = True,
               label_ports = True, label_aliases = False, new_window = False):
     """ Takes a list of devices/references/polygons or single one of those, and
     plots them.  Also has the option to overlay their ports """
-    if new_window: fig, ax = plt.subplots(1)
+    if matplotlib_imported == False:
+        raise ImportError("PHIDL tried to import matplotlib but it failed. PHIDL " + 
+              "will still work but quickplot() will not.  Try using " +
+              "quickplot2() instead (see note in tutorial) ")
+
+    if new_window: 
+        fig, ax = plt.subplots(1)
+        ax.autoscale(enable = True, tight = True)
     else:
-        ax = plt.gca()  # Get current figure
-        ax.cla()        # Clears the axes of all previous polygons
+        if plt.fignum_exists(num='PHIDL quickplot'):
+            fig = plt.figure('PHIDL quickplot')
+            plt.clf() # Erase figure so toolbar at top works correctly
+            ax = fig.add_subplot(111)
+        else:
+            fig,ax = plt.subplots(num='PHIDL quickplot')
     ax.axis('equal')
     ax.grid(True, which='both', alpha = 0.4)
     ax.axhline(y=0, color='k', alpha = 0.2, linewidth = 1)
     ax.axvline(x=0, color='k', alpha = 0.2, linewidth = 1)
+    bbox = None
 
     # Iterate through each each Device/DeviceReference/Polygon
-    np.random.seed(0)
     if type(items) is not list:  items = [items]
     for item in items:
-        if isinstance(item, (Device, DeviceReference, gdspy.CellArray)):
+        if isinstance(item, (Device, DeviceReference, CellArray)):
             polygons_spec = item.get_polygons(by_spec=True, depth=None)
             for key in sorted(polygons_spec):
                 polygons = polygons_spec[key]
                 layerprop = _get_layerprop(layer = key[0], datatype = key[1])
-                _draw_polygons(polygons, ax, facecolor = layerprop['color'],
+                new_bbox = _draw_polygons(polygons, ax, facecolor = layerprop['color'],
                                edgecolor = 'k', alpha = layerprop['alpha'])
+                bbox = _update_bbox(bbox, new_bbox)
+            # If item is a Device or DeviceReference, draw ports
+            if isinstance(item, (Device, DeviceReference)):
                 for name, port in item.ports.items():
                     if (port.width is None) or (port.width == 0):
-                        _draw_port_as_point(port)
+                        new_bbox = _draw_port_as_point(ax, port)
                     else:
-                        _draw_port(port, arrow_scale = 2, shape = 'full', color = 'k')
-                    ax.text(port.midpoint[0], port.midpoint[1], name)
+                        new_bbox = _draw_port(ax, port, is_subport = False,  color = 'r')
+                    bbox = _update_bbox(bbox, new_bbox)
             if isinstance(item, Device) and show_subports is True:
                 for sd in item.references:
-                    for name, port in sd.ports.items():
-                        _draw_port(port, arrow_scale = 1, shape = 'right', color = 'r')
-                        ax.text(port.midpoint[0], port.midpoint[1], name)
+                    if not isinstance(sd, (gdspy.CellArray)):
+                        for name, port in sd.ports.items():
+                            new_bbox = _draw_port(ax, port, is_subport = True,
+                                                  color = np.array(_SUBPORT_RGB)/255)
+                            bbox = _update_bbox(bbox, new_bbox)
             if isinstance(item, Device) and label_aliases is True:
                 for name, ref in item.aliases.items():
                     ax.text(ref.x, ref.y, str(name), style = 'italic', color = 'blue',
-                             weight = 'bold', size = 'large', ha = 'center')
+                             weight = 'bold', size = 'large', ha = 'center', fontsize = 14)
         elif isinstance(item, Polygon):
             polygons = item.polygons
             layerprop = _get_layerprop(item.layers[0], item.datatypes[0])
-            _draw_polygons(polygons, ax, facecolor = layerprop['color'],
+            new_bbox = _draw_polygons(polygons, ax, facecolor = layerprop['color'],
                            edgecolor = 'k', alpha = layerprop['alpha'])
+            bbox = _update_bbox(bbox, new_bbox)
+        elif isinstance(item, Path):
+            points = item.points
+            new_bbox = _draw_line(x = points[:,0], y = points[:,1],
+                            ax = ax, linestyle = '--',
+                            linewidth = 2, color = 'b')
+            bbox = _update_bbox(bbox, new_bbox)
+
+    if bbox == None:
+        bbox = [0,0,1,1]
+    xmargin = (bbox[2]-bbox[0])*0.2
+    ymargin = (bbox[3]-bbox[1])*0.2
+    ax.set_xlim([bbox[0]-xmargin, bbox[2]+xmargin])
+    ax.set_ylim([bbox[1]-ymargin, bbox[3]+ymargin])
+    # print(bbox)
     plt.draw()
     plt.show(block = False)
+
+
+def _update_bbox(bbox, new_bbox):
+    if bbox == None:
+        return new_bbox
+    if new_bbox[0] < bbox[0]: bbox[0] = new_bbox[0] # xmin
+    if new_bbox[1] < bbox[1]: bbox[1] = new_bbox[1] # ymin
+    if new_bbox[2] > bbox[2]: bbox[2] = new_bbox[2] # xmin
+    if new_bbox[3] > bbox[3]: bbox[3] = new_bbox[3] # ymin
+    return bbox
 
 
 
@@ -103,34 +146,62 @@ def _get_layerprop(layer, datatype):
 
 
 def _draw_polygons(polygons, ax, **kwargs):
-    """ This function uses a trick where all polygon points are concatenated,
-    separated only by NaN values.  This speeds up drawing considerably, see
-    http://exnumerus.blogspot.com/2011/02/how-to-quickly-plot-polygons-in.html
-    """
-    nan_pt = np.array([[np.nan, np.nan]])
-    polygons_with_nans = [np.concatenate((p, [p[0]], nan_pt), axis = 0) for p in polygons]
-    all_polygons = np.vstack(polygons_with_nans)
-    plt.fill(all_polygons[:,0], all_polygons[:,1], **kwargs)
+    coll = PolyCollection(polygons, **kwargs)
+    ax.add_collection(coll)
+    stacked_polygons = np.vstack(polygons)
+    xmin,ymin = np.min(stacked_polygons, axis = 0)
+    xmax,ymax = np.max(stacked_polygons, axis = 0)
+    bbox = [xmin,ymin,xmax,ymax]
+    return bbox
+        
+from matplotlib.lines import Line2D
+def _draw_line(x, y, ax, **kwargs):
+    line = Line2D(x, y, **kwargs)
+    ax.add_line(line)
+    xmin,ymin = np.min(x), np.min(y)
+    xmax,ymax = np.max(x), np.max(y)
+    bbox = [xmin,ymin,xmax,ymax]
+    return bbox
 
 
-def _draw_port(port, arrow_scale = 1, **kwargs):
-    x = port.midpoint[0]
-    y = port.midpoint[1]
-    nv = port.normal
-    n = (nv[1]-nv[0])*arrow_scale
-    dx, dy = n[0], n[1]
+def _port_marker(port, is_subport):
+    if is_subport:
+        arrow_scale = 0.75
+        rad = (port.orientation+45)*np.pi/180
+        pm = +1
+    else:
+        arrow_scale = 1
+        rad = (port.orientation-45)*np.pi/180
+        pm = -1
+    arrow_points = np.array([[0,0],[10,0],[6,pm*4],[6,pm*2],[0,pm*2]])/35*port.width*arrow_scale
+    arrow_points += port.midpoint
+    arrow_points = _rotate_points(arrow_points, angle = port.orientation, center = port.center)
+    text_pos = np.array([np.cos(rad), np.sin(rad)])*port.width/3 + port.center
+    return arrow_points, text_pos
+
+
+
+def _draw_port(ax, port, is_subport, color):
     xbound, ybound = np.column_stack(port.endpoints)
     #plt.plot(x, y, 'rp', markersize = 12) # Draw port midpoint
-    plt.plot(xbound, ybound, 'r', alpha = 0.5, linewidth = 3) # Draw port edge
-    plt.arrow(x, y, dx, dy,length_includes_head=True, width = 0.1*arrow_scale,
-              head_width=0.3*arrow_scale, alpha = 0.5, **kwargs)
+    arrow_points, text_pos = _port_marker(port, is_subport)
+    xmin,ymin = np.min(np.vstack([arrow_points,port.endpoints]), axis = 0)
+    xmax,ymax = np.max(np.vstack([arrow_points,port.endpoints]), axis = 0)
+    ax.plot(xbound, ybound, alpha = 0.5, linewidth = 3, color = color) # Draw port edge
+    ax.plot(arrow_points[:,0], arrow_points[:,1], alpha = 0.8, linewidth = 2, color = color) # Draw port edge
+    ax.text(text_pos[0], text_pos[1], port.name,
+        horizontalalignment = 'center', verticalalignment = 'center', fontsize = 14, color = color)
+    bbox = [xmin,ymin,xmax,ymax]
+    return bbox
 
 
-def _draw_port_as_point(port, **kwargs):
+def _draw_port_as_point(ax, port, **kwargs):
     x = port.midpoint[0]
     y = port.midpoint[1]
     plt.plot(x, y, 'r+', alpha = 0.5, markersize = 15, markeredgewidth = 2) # Draw port edge
-
+    bbox = [x-port.width/2,y-port.width/2,x+port.width/2,y+port.width/2]
+    ax.text(port.midpoint[0], port.midpoint[1], port.name, fontsize = 14)
+    return bbox
 
 
 class ViewerWindow(QMainWindow):
@@ -296,20 +367,16 @@ class Viewer(QGraphicsView):
             point1 = QPointF(point1[0], point1[1])
             point2 = QPointF(point2[0], point2[1])
             qline = self.scene.addLine(QLineF(point1, point2))
-            arrow_points = np.array([[0,0],[10,0],[6,4],[6,2],[0,2]])/(40)*port.width
+            arrow_points, text_pos = _port_marker(port, is_subport)
             arrow_qpoly = QPolygonF( [QPointF(p[0], p[1]) for p in arrow_points] )
             port_scene_poly = self.scene.addPolygon(arrow_qpoly)
-            port_scene_poly.setRotation(port.orientation)
-            port_scene_poly.moveBy(port.midpoint[0], port.midpoint[1])
+            # port_scene_poly.setRotation(port.orientation)
+            # port_scene_poly.moveBy(port.midpoint[0], port.midpoint[1])
             port_shapes = [qline,port_scene_poly]
         qtext = self.scene.addText(str(port.name), self.portfont)
-        port_items = port_shapes + [qtext]
-        rad = port.orientation*np.pi/180
-        x,y = port.endpoints[0]*1/4 +  port.endpoints[1]*3/4 + np.array([np.cos(rad), np.sin(rad)])*port.width/8
-#        x,y = port.midpoint[0], port.midpoint[1]
-#        x,y  = x - qtext.boundingRect().width()/2, y - qtext.boundingRect().height()/2
-        qtext.setPos(QPointF(x,y))
+        qtext.setPos(QPointF(text_pos[0], text_pos[1]))
         qtext.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        port_items = port_shapes + [qtext]
 
         if not is_subport:
             [shape.setPen(self.portpen) for shape in port_shapes]
@@ -595,11 +662,15 @@ class Viewer(QGraphicsView):
               F2: Show/hide ports
               F3: Show/hide subports (ports in underlying references)
             """
-            msg = QMessageBox.about(self, 'PHIDL Help', help_str)
-            msg.raise_()
+            QMessageBox.about(self, 'PHIDL Help', help_str)
 
 
 def quickplot2(item_list, *args, **kwargs):
+    if qt_imported == False:
+        raise ImportError("PHIDL tried to import PyQt5 but it failed. PHIDL will" + 
+              "still work but quickplot2() may not.  Try using" +
+              "quickplot() instead (based on matplotlib)")
+        
     global app
     if QCoreApplication.instance() is None:
         app = QApplication(sys.argv)
@@ -621,8 +692,9 @@ def quickplot2(item_list, *args, **kwargs):
             # If element is a Device, draw ports and aliases
             if isinstance(element, phidl.device_layout.Device):
                 for ref in element.references:
-                    for name, port in ref.ports.items():
-                        viewer.add_port(port, is_subport = True)
+                    if not isinstance(ref, gdspy.CellArray):
+                        for name, port in ref.ports.items():
+                            viewer.add_port(port, is_subport = True)
                 for name, port in element.ports.items():
                     viewer.add_port(port)
                     viewer.add_aliases(element.aliases)

@@ -17,6 +17,7 @@ venv
 venvinfo
 *.sublime-project
 *.sublime-workspace
+.pytest_cache
 
 
 # IPython notebooks
@@ -82,5 +83,3 @@ target/
 *.bat
 *.lyp
 *.oas
-*.ipynb
-*.svg

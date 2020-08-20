@@ -1,20 +1,29 @@
-Welcome to PHIDL's documentation
-================================================
-Currently, this documentation is a wrapper for auto-api. Most of the real documentation is in the docstrings of the code. Nevertheless, Sphinx pages on more advanced topics could be written in here.
+.. phidl documentation master file, created by
+   sphinx-quickstart on Sat Nov  2 18:17:54 2019.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root ``toctree`` directive.
+
+
+Welcome to phidl's documentation!
+=================================
+
+
+Geometry and function reference for PHIDL, an open-source Python GDS (GDSII) layout and CAD geometry creation tool.
+
+Homepage here:  `PHIDL <https://github.com/amccaugh/phidl>`_
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Contents:
 
-   _static/changelog
-   _static/dash
+   geometry_reference
+   examples
+   API
 
 
-API
----
+Indices and tables
+==================
 
-.. toctree::
-   :maxdepth: 1
-
-   API <API/phidl>
-
+* :ref:``genindex``
+* :ref:``modindex``
+* :ref:``search``

@@ -19,8 +19,15 @@ import phidl.utilities as pu
 # >>> import phidl.geometry as pg
 # >>> qp(pg.rectangle())
 #
-# If that doesn't work and you're using IPython, try using the command
+# IPYTHON: If using IPython, try first running the command
 # >>> %gui qt
+#
+# JUPYTER: If using Jupyter Notebook, try first running the command
+# >>> %matplotlib qt
+#
+# SPYDER: If using Spyder,  you need to change your
+# "Graphics backend" to "Automatic." You can do that in Spyder through the menu
+#     Tools > Preferences > IPython Console > Graphics > Backend: Automatic
 #==============================================================================
 
 
@@ -87,15 +94,24 @@ qp(D) # quickplot it!
 #==============================================================================
 # Create and add a polygon from separate lists of x points and y points
 # e.g. [(x1, x2, x3, ...), (y1, y2, y3, ...)]
-poly1 = D.add_polygon( [(8,6,7,9), (6,8,9,5)] )
+poly1 = D.add_polygon( [(8,6,7,9), (6,8,9,5)], layer = 0)
 
 # Alternatively, create and add a polygon from a list of points
 # e.g. [(x1,y1), (x2,y2), (x3,y3), ...] using the same function
-poly2 = D.add_polygon( [(0, 0), (1, 1), (1, 3), (-3, 3)] )
+poly2 = D.add_polygon( [(-5, 3), (-4, 4), (-4, 6), (-8, 6)], layer = 1)
+
+# As a third option, use functions from the built-in geometry library
+# (more examples below in section "Using the built-in geometry library")
+# and a listing is available at http://phidl.readthedocs.io/ )
+D << pg.ellipse(radii = (3,1.5), layer = 1).move([10,-4])
+D << pg.cross(length = 3, width = 0.2, layer = 0).move([10,-8])
+D << pg.rectangle(size = (4,2), layer = 3).move([-10,-5])
+D << pg.litho_steps(line_widths = [.1,.2,.4,.8], line_spacing = 1, height = 6, layer = 0).move([0,-5])
+
 
 qp(D) # quickplot it!
 
-
+#%%
 
 #==============================================================================
 # Manipulating geometry 1 - Basic movement and rotation
@@ -113,7 +129,7 @@ wg3.movex(30,40) # Moves "from" x=30 "to" x=40 (e.g. shifts wg3 by +10 in the x-
 wg1.rotate(45) # Rotate the first waveguide by 45 degrees around (0,0)
 wg2.rotate(30, center = [1,1]) # Rotate the second waveguide by 30 degrees around (1,1)
 
-wg1.reflect(p1 = [1,1], p2 = [1,3]) # Reflects wg3 across the line formed by p1 and p2
+wg1.mirror(p1 = [1,1], p2 = [1,3]) # Reflects wg3 across the line formed by p1 and p2
 
 
 
@@ -150,7 +166,7 @@ qp(D) # quickplot it!
 # All the waveguides we made have two ports: 'wgport1' and 'wgport2'  We can
 # use these names in place of (x,y) pairs.  For instance, if we want to move
 # wg1 such that its port 'wgport1' rests on the origin, we do:
-wg1.move(origin = 'wgport1', destination = [0,0])
+wg1.move(origin = wg1.ports['wgport1'], destination = [0,0])
 # Alternatively, we can use the Port object itself in the same manner.  We can
 # access the Port objects for any Device (or DeviceReference) by calling device.ports,
 # --which returns a Python dictionary--and accessing its value with the key
@@ -159,7 +175,7 @@ wg3.move(origin = wg3.ports['wgport1'], destination = [0,0])
 wg2.move(origin = wg2.ports['wgport1'], destination = wg3.ports['wgport2'])
 # Several functions beyond just move() can take Ports as inputs
 wg1.rotate(angle = -60, center = wg1.ports['wgport2'])
-wg3.reflect(p1 = wg3.ports['wgport1'].midpoint, p2 = wg3.ports['wgport1'].midpoint + np.array([1,0]))
+wg3.mirror(p1 = wg3.ports['wgport1'].midpoint, p2 = wg3.ports['wgport1'].midpoint + np.array([1,0]))
 
 qp(D) # quickplot it!
 
@@ -264,6 +280,51 @@ qp(D2)
 
 
 #==============================================================================
+# Using the built-in geometry library (phidl.geometry)
+#==============================================================================
+# Usually at the beginning of a phidl file we import the phidl.geometry module
+# as ``pg``, like this:
+import phidl.geometry as pg
+
+# The ``pg`` module contains dozens of premade shapes and structures, ranging
+# from simple ones like ellipses to complex photonic structures.  Let's create
+# a few simple structures and plot them
+D = Device()
+G1 = pg.ellipse(radii = (10,5), angle_resolution = 2.5, layer = 1)
+G2 = pg.snspd(wire_width = 0.2, wire_pitch = 0.6, size = (10,8), layer = 2)
+G3 = pg.rectangle(size = (10,5), layer = 3)
+g1 = D.add_ref(G1)
+g2 = D.add_ref(G2)
+g3 = D.add_ref(G3)
+g1.xmin = g2.xmax + 5
+g3.xmin = g1.xmax + 5
+qp(D)
+
+# There are dozens of these types of structures.  Visit the documentation 
+# at https://phidl.readthedocs.io/ or see  the /phidl/geometry.py
+# file for a full geometry list.
+
+# Let's save this file so we can practice importing it in the next step
+D.write_gds('MyNewGDS.gds')
+
+
+#==============================================================================
+# Premade geometry: Lithography shapes
+#==============================================================================
+# PHIDL comes with a set of handy functions for creating standard lithographic
+# test structures, such as calipers (for detecting fabrication-layer-offsets),
+# stars, and positive + negative-tone steps
+D = Device()
+d1 = D << pg.litho_calipers(notch_size = [3,10], notch_spacing = 2, num_notches = 7,
+        offset_per_notch = 0.2, row_spacing = 0, layer1 = 1, layer2 = 2).rotate(90)
+d2 = D << pg.litho_steps(line_widths = [1,2,4,8,16], line_spacing = 10, height = 80, layer = 0).movex(80)
+d3 = D << pg.litho_star(num_lines = 16, line_width = 3, diameter = 80, layer = 4).movex(240)
+d1.y = d2.y = d3.y
+qp(D)
+D.write_gds('LithographyTestStructuresMetrics.gds')
+
+
+#==============================================================================
 # Labeling
 #==============================================================================
 # We can also label (annotate) our devices, in order to record information
@@ -273,11 +334,11 @@ qp(D2)
 # or printed like the polygons created by the text()
 
 
-D2.label(text = 'First label', position = mwg1.center)
-D2.label('Second label', mwg2.center)
+D2.add_label(text = 'First label', position = mwg1.center)
+D2.add_label('Second label', mwg2.center)
 
 # It's very useful for recording information about the devices or layout
-D2.label(text = 'The x size of this\nlayout is %s' % D2.xsize,
+D2.add_label(text = 'The x size of this\nlayout is %s' % D2.xsize,
             position = (D2.xmax, D2.ymax), layer = 255)
 
 # Again, note we have to write the GDS for it to be visible (view in KLayout)
@@ -297,6 +358,140 @@ D2.write_gds('MultiMultiWaveguideTutorial.gds')
 D2.write_gds('MultiMultiWaveguideTutorialNewUnits.gds',
              unit = 1e-3, precision = 1e-2)
 
+
+#==============================================================================
+# Packing shapes into a rectangular bin
+#==============================================================================
+
+# The `pg.packer()` function is able to pack geometries together into
+# rectangular bins. If a `max_size` is specified, the function will create as
+# many bins as is necessary to pack all the geometries and then return a list
+# of the filled-bin Devices.
+
+# Here we generate several random shapes then compress them together
+# automatically. We allow the bin to be as large as needed to fit all the
+# Devices by specifying `max_size = (None, None)`.  By setting `aspect_ratio =
+# (2,1)`, we specify the rectangular bin it tries to pack them into should be
+# twice as wide as it is tall:
+
+np.random.seed(5)
+D_list = [pg.ellipse(radii = np.random.rand(2)*n+2) for n in range(50)]
+D_list += [pg.rectangle(size = np.random.rand(2)*n+2) for n in range(50)]
+
+D_packed_list = pg.packer(
+        D_list,                 # Must be a list or tuple of Devices
+        spacing = 1.25,         # Minimum distance between adjacent shapes
+        aspect_ratio = (2,1),   # (width, height) ratio of the rectangular bin
+        max_size = (None,None), # Limits the size into which the shapes will be packed
+        density = 1.05,          # Values closer to 1 pack tighter but require more computation
+        sort_by_area = True,    # Pre-sorts the shapes by area
+        verbose = False,
+        )
+D = D_packed_list[0] # Only one bin was created, so we plot that
+qp(D) # quickplot the geometry
+
+# Say we need to pack many shapes into multiple 500x500 unit die. If we set
+# `max_size = (500,500)` the shapes will be packed into as many 500x500 unit
+# die as required to fit them all:
+
+np.random.seed(1)
+D_list = [pg.ellipse(radii = np.random.rand(2)*n+2) for n in range(120)]
+D_list += [pg.rectangle(size = np.random.rand(2)*n+2) for n in range(120)]
+
+D_packed_list = pg.packer(
+        D_list,                 # Must be a list or tuple of Devices
+        spacing = 4,         # Minimum distance between adjacent shapes
+        aspect_ratio = (1,1),   # Shape of the box
+        max_size = (500,500),   # Limits the size into which the shapes will be packed
+        density = 1.05,         # Values closer to 1 pack tighter but require more computation
+        sort_by_area = True,    # Pre-sorts the shapes by area
+        verbose = False,
+        )
+
+# Put all packed bins into a single device and spread them out with distribute()
+F = Device()
+[F.add_ref(D) for D in D_packed_list]
+F.distribute(elements = 'all', direction = 'x', spacing = 100, separation = True)
+qp(F)
+
+# Note that the packing problem is an NP-complete problem, so `pg.packer()`
+# may be slow if there are more than a few hundred Devices to pack (in that
+# case, try pre-packing a few dozen at a time then packing the resulting
+# bins). Requires the `rectpack` python package.
+
+
+
+#==============================================================================
+# Distributing shapes
+#==============================================================================
+# The `distribute()` function allows you to space out elements within a Device
+# evenly in the x or y direction.  It is meant to duplicate the distribute
+# functionality present in Inkscape / Adobe Illustrator
+
+# Say we start out with a few random-sized rectangles we want to space out
+# and we want to guarantee some distance between the objects.  By
+# setting `separation = True` we move each object such that there is `spacing`
+# distance between them:
+
+D = Device()
+# Create differents-sized rectangles and add them to D
+[D.add_ref(pg.rectangle(size = [n*15+20,n*15+20]).move((n,n*4))) for n in [0,2,3,1,2]]
+# Distribute all the rectangles in D along the x-direction with a separation of 5
+D.distribute(elements = 'all',   # either 'all' or a list of objects
+             direction = 'x',    # 'x' or 'y'
+             spacing = 5,
+             separation = True)
+
+# Alternatively, we can spread them out on a fixed grid by setting `separation
+# = False`. Here we align the left edge (`edge = 'min'`) of each object along
+# a grid spacing of 100:
+
+D = Device()
+[D.add_ref(pg.rectangle(size = [n*15+20,n*15+20]).move((n,n*4))) for n in [0,2,3,1,2]]
+D.distribute(elements = 'all', direction = 'x', spacing = 100, separation = False,
+             edge = 'xmin') # edge must be either 'xmin', 'xmax', 'x', 'ymin', 'ymax', or 'y'
+
+qp(D) # quickplot the geometry
+
+# The alignment can also be done along the right edge as well by setting 
+# `edge = 'max'`, or along the center by setting `edge = 'center'`
+
+
+
+#==============================================================================
+# Aligning shapes
+#==============================================================================
+
+# The `align()` function allows you to elements within a Device horizontally
+# or vertically.  It is meant to duplicate the alignment functionality present
+# in Inkscape / Adobe Illustrator:
+
+# Say we `distribute()` a few objects, but they're all misaligned.
+# we can use the `align()` function to align their top edges (`alignment = 'ymax'):
+
+D = Device()
+# Create differents-sized rectangles and add them to D then distribute them
+[D.add_ref(pg.rectangle(size = [n*15+20,n*15+20]).move((n,n*4))) for n in [0,2,3,1,2]]
+D.distribute(elements = 'all', direction = 'x', spacing = 5, separation = True)
+
+# Align top edges
+D.align(elements = 'all', alignment = 'ymax')
+
+qp(D) # quickplot the geometry
+
+
+# or align their centers (`alignment = 'y'):
+D = Device()
+# Create differents-sized rectangles and add them to D then distribute them
+[D.add_ref(pg.rectangle(size = [n*15+20,n*15+20]).move((n,n*4))) for n in [0,2,3,1,2]]
+D.distribute(elements = 'all', direction = 'x', spacing = 5, separation = True)
+
+# Align top edges
+D.align(elements = 'all', alignment = 'y')
+
+qp(D) # quickplot the geometry
+
+# other valid alignment options include `'xmin', 'x', 'xmax', 'ymin', 'y', and 'ymax'`
 
 
 #==============================================================================
@@ -324,49 +519,21 @@ for p in all_ports:
 
 
 #==============================================================================
-# Adding premade geometry with phidl.geometry
+# Advanced: Using CellArray
 #==============================================================================
-# Usually at the beginning of a phidl file we import the phidl.geometry module
-# as ``pg``, like this:
-import phidl.geometry as pg
+# In GDS, there's a type of structure called a "CellArray" which takes a cell
+# and repeats it NxM times on a fixed grid spacing.  For convenience, PHIDL
+# includes this functionality with the add_array() function.  Note that
+# CellArrays are not compatible with ports (since there is no way to 
+# access/modify individual elements in a GDS cellarray)
 
-# The ``pg`` module contains dozens of premade shapes and structures, ranging
-# from simple ones like ellipses to complex photonic structures.  Let's create
-# a few simple structures and plot them
 D = Device()
-G1 = pg.ellipse(radii = (10,5), angle_resolution = 2.5, layer = 1)
-G2 = pg.snspd(wire_width = 0.2, wire_pitch = 0.6, size = (10,8), layer = 2)
-G3 = pg.rectangle(size = (10,5), layer = 3)
-g1 = D.add_ref(G1)
-g2 = D.add_ref(G2)
-g3 = D.add_ref(G3)
-g1.xmin = g2.xmax + 5
-g3.xmin = g1.xmax + 5
+R = pg.rectangle([30,20])
+a = D.add_array(R, columns = 7, rows = 5,  spacing = (31, 21))
+# bbox gets the bounding box of the whole array
+a.bbox.tolist() == [[0.0, 0.0], [216.0, 104.0]] 
 qp(D)
 
-# There are dozens of these types of structures.  See the /phidl/geometry.py
-# file for a full geometry list.  Note some of the more complex shapes are
-# experimental and may change with time.
-
-
-# Let's save this file so we can practice importing it in the next step
-D.write_gds('MyNewGDS.gds')
-
-
-#==============================================================================
-# Premade geometry: Lithography shapes
-#==============================================================================
-# PHIDL comes with a set of handy functions for creating standard lithographic
-# test structures, such as calipers (for detecting fabrication-layer-offsets),
-# stars, and positive + negative-tone steps
-D = Device()
-d1 = D << pg.litho_calipers(notch_size = [3,10], notch_spacing = 2, num_notches = 7,
-        offset_per_notch = 0.2, row_spacing = 0, layer1 = 1, layer2 = 2).rotate(90)
-d2 = D << pg.litho_steps(line_widths = [1,2,4,8,16], line_spacing = 10, height = 80, layer = 0).movex(80)
-d3 = D << pg.litho_star(num_lines = 16, line_width = 3, diameter = 80, layer = 4).movex(240)
-d1.y = d2.y = d3.y
-qp(D)
-D.write_gds('LithographyTestStructuresMetrics.gds')
 
 
 
@@ -412,7 +579,8 @@ DL.add_ref( pg.text('Layer1', size = 10, layer = 1) )
 DL.add_ref( pg.text('Layer2', size = 10, layer = [2,5]) ).movey(-20)
 
 # 3) as a Layer object
-my_gold_layer = Layer(gds_layer = 3, gds_datatype = 0, name = 'goldpads', description = 'Gold pads liftoff')
+my_gold_layer = Layer(gds_layer = 3, gds_datatype = 0, name = 'goldpads',
+                      color = (0.1,.5,.9), description = 'Gold pads liftoff')
 my_unused_layer = Layer(240,1) # Creates a Layer for GDS layer 240 (dataype 1)
 DL.add_ref( pg.text('Layer3', size = 10, layer = my_gold_layer) ).movey(-40)
 
@@ -588,7 +756,7 @@ D = Device()
 C = pg.circle()
 c1 = D.add_ref(C)   # Add first reference
 c2 = D.add_ref(C)   # Add second reference
-c2.x += 15          # Move the second circle over by 10
+c2.x += 15          # Move the second circle over by 15
 qp(c2)
 qp(D)
 
@@ -621,7 +789,7 @@ print(D.aliases.keys())
 #==============================================================================
 # Flattening a Device
 #==============================================================================
-# Sometimes you want to remove references from a Device while keeping all
+# Sometimes you want to remove cell structure from a Device while keeping all
 # of the shapes/polygons intact and in place.  The D.flatten() keeps all the
 # polygons in D, but removes all the underlying references it's attached to.
 # Also, if you specify the `single_layer` argument it will move all of the
@@ -720,6 +888,7 @@ qp(D_deepcopied)
 E1.add_polygon([[10,20,35], [1,60,40]], layer = 3)
 qp(D_deepcopied)
 
+
 #==============================================================================
 # Extracting layers
 #==============================================================================
@@ -760,33 +929,6 @@ qp([E1, E2, E3])
 D2 = pg.boolean(A = [E1, E3], B = E2, operation = 'A-B')
 qp(D2)
 
-
-#==============================================================================
-# Comparing two Devices
-#==============================================================================
-# Sometimes you want to be able to test whether two Devices are identical or
-# not (similar to the "diff" of a text file).  You can perform this comparison
-# by using the pg.xor_diff(A, B) function.  It will perform a layer-by-layer
-# XOR difference between the Devices A and B, and returns polygons representing
-# the differences between A and B.
-
-D = Device()
-E1 = pg.ellipse()
-E2 = pg.ellipse().rotate(15)
-E3 = pg.ellipse()
-
-# Let's compare two slightly different Devices
-X1 = pg.xor_diff(A = E1, B = E2)
-# When we plot the result, we see only the differences between E1 and E2
-qp(X1)
-
-# Now let's compare two identical Devices
-X2 = pg.xor_diff(A = E1, B = E3)
-qp(X2) # In this case X2 is empty -- therefore E1 and E3 are identical!
-
-# We can double-check this by computing the area of each device
-print('E1 != E2 because X1 is not blank: it has total polygon area %s' % X1.area())
-print('E1 == E3 because X2 is blank: it has total polygon area %s' % X2.area())
 
 
 #==============================================================================
@@ -831,6 +973,35 @@ dj.xmax += 25
 djl.xmax += 50
 
 qp(D)
+
+
+#==============================================================================
+# Comparing two Devices
+#==============================================================================
+# Sometimes you want to be able to test whether two Devices are identical or
+# not (similar to the "diff" of a text file).  You can perform this comparison
+# by using the pg.xor_diff(A, B) function.  It will perform a layer-by-layer
+# XOR difference between the Devices A and B, and returns polygons representing
+# the differences between A and B.
+
+D = Device()
+E1 = pg.ellipse()
+E2 = pg.ellipse().rotate(15)
+E3 = pg.ellipse()
+
+# Let's compare two slightly different Devices
+X1 = pg.xor_diff(A = E1, B = E2)
+# When we plot the result, we see only the differences between E1 and E2
+qp(X1)
+
+# Now let's compare two identical Devices
+X2 = pg.xor_diff(A = E1, B = E3)
+qp(X2) # In this case X2 is empty -- therefore E1 and E3 are identical!
+
+# We can double-check this by computing the area of each device
+print('E1 != E2 because X1 is not blank: it has total polygon area %s' % X1.area())
+print('E1 == E3 because X2 is blank: it has total polygon area %s' % X2.area())
+
 
 #==============================================================================
 # Removing geometry
@@ -878,7 +1049,7 @@ from phidl import device_lru_cache
 @device_lru_cache
 def computationally_intensive_device(width = 10, unused_var = 1):
     D = Device()
-    time.sleep(0.1) # Pretend we're doing computations for 1.5 seconds here
+    time.sleep(0.1) # Pretend we're doing computations for 0.1 seconds here
     D.add_polygon( [(width,6,7,9), (6,8,9,5)] )
     return D
 
